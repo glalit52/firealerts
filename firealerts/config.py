@@ -54,6 +54,15 @@ class Settings:
     # Terrain-aware spread (AWS Terrain Tiles + ESA WorldCover)
     terrain_enabled: bool = field(default_factory=lambda: _bool("TERRAIN_ENABLED", True))
 
+    # Static heat sources (volcanoes, gas flares, learned persistent hotspots)
+    static_sources_enabled: bool = field(default_factory=lambda: _bool("STATIC_SOURCES", True))
+    static_radius_km: float = field(default_factory=lambda: float(os.getenv("STATIC_RADIUS_KM", "2.0")))
+    # GVP positions are summits; active vents and lava lakes in large calderas sit km away.
+    static_volcano_radius_km: float = field(default_factory=lambda: float(os.getenv("STATIC_VOLCANO_RADIUS_KM", "5.0")))
+    static_learn_days: int = field(default_factory=lambda: int(os.getenv("STATIC_LEARN_DAYS", "30")))
+    static_learn_min_days: int = field(default_factory=lambda: int(os.getenv("STATIC_LEARN_MIN_DAYS", "14")))
+    static_learn_fraction: float = field(default_factory=lambda: float(os.getenv("STATIC_LEARN_FRACTION", "0.6")))
+
     # Accounts. AUTH_REQUIRED=false keeps single-user self-hosting login-free.
     auth_required: bool = field(default_factory=lambda: _bool("AUTH_REQUIRED", False))
     registration_open: bool = field(default_factory=lambda: _bool("REGISTRATION_OPEN", True))

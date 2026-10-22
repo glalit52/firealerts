@@ -12,6 +12,8 @@ from .config import Settings
 from .db import Alert, AreaOfInterest, Detection
 from .geo import distance_to_polygon_km
 from .notifiers import deliver
+from .sources import static_sources
+from .sources.static_sources import StaticIndex
 
 log = logging.getLogger(__name__)
 
@@ -25,10 +27,12 @@ def _bbox(ring, pad_km: float):
     return min(lons) - pad * 3, min(lats) - pad, max(lons) + pad * 3, max(lats) + pad
 
 
-def match(aoi: AreaOfInterest, detections: list[Detection]) -> list[tuple[Detection, float]]:
+def match(aoi: AreaOfInterest, detections: list[Detection], statics: StaticIndex | None = None) -> list[tuple[Detection, float]]:
+    """Detections inside the area (plus buffer). Static heat sources are skipped unless the area opts in."""
     ring = aoi.geometry["coordinates"][0]
     w, s, e, n = _bbox(ring, aoi.buffer_km)
     min_rank = _CONF_RANK.get(aoi.min_confidence, 1)
+    skip_static = statics is not None and len(statics) and not aoi.include_static
     hits = []
     for d in detections:
         if not (s <= d.lat <= n and w <= d.lon <= e):
@@ -36,7 +40,7 @@ def match(aoi: AreaOfInterest, detections: list[Detection]) -> list[tuple[Detect
         if _CONF_RANK.get(d.confidence, 1) < min_rank:
             continue
         dist = distance_to_polygon_km(d.lon, d.lat, ring)
-        if dist <= aoi.buffer_km:
+        if dist <= aoi.buffer_km and not (skip_static and statics.match(d.lat, d.lon)):
             hits.append((d, dist))
     return hits
 
@@ -45,9 +49,10 @@ async def process(session: Session, client: httpx.AsyncClient, cfg: Settings, ne
     if not new:
         return 0
     aois = session.scalars(select(AreaOfInterest).where(AreaOfInterest.active.is_(True))).all()
+    statics = static_sources.index_for(session, cfg) if aois else None
     created = 0
     for aoi in aois:
-        hits = match(aoi, new)
+        hits = match(aoi, new, statics)
         if not hits:
             continue
         nearest = min(hits, key=lambda h: h[1])

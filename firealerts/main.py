@@ -23,7 +23,7 @@ from .geo import bbox_contains, circle_ring
 from .ml import model, risk
 from .science import spread
 from .science.cluster import Hotspot, cluster
-from .sources import weather
+from .sources import static_sources, weather
 
 log = logging.getLogger("firealerts")
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
@@ -39,6 +39,7 @@ class State:
     task: asyncio.Task | None = None
     lock = asyncio.Lock()
     incident_cache: dict = {}
+    static_cache: dict = {}
 
 
 state = State()
@@ -109,6 +110,15 @@ def _query_detections(session: Session, hours: float, bbox=None, sources: list[s
     return rows
 
 
+def _statics(session: Session) -> static_sources.StaticIndex:
+    """Volcanoes, flares and learned persistent hotspots; rebuilt once per ingest run."""
+    last = session.scalar(select(func.max(IngestRun.id))) or 0
+    if last not in state.static_cache:
+        state.static_cache.clear()
+        state.static_cache[last] = static_sources.index_for(session, settings)
+    return state.static_cache[last]
+
+
 def _incidents(session: Session, hours: float):
     last = session.scalar(select(func.max(IngestRun.id))) or 0
     key = (hours, last)
@@ -117,8 +127,9 @@ def _incidents(session: Session, hours: float):
         hs = [Hotspot(d.id, d.lat, d.lon, d.acq_time, d.source, d.frp, d.confidence, d.pixel_m) for d in dets]
         incs = cluster(hs)
         now = utcnow()
+        statics = _statics(session)
         state.incident_cache.clear()
-        state.incident_cache[key] = ({i.id: i for i in incs}, {i.id: i.summary(now) for i in incs})
+        state.incident_cache[key] = ({i.id: i for i in incs}, {i.id: i.summary(now, statics) for i in incs})
     return state.incident_cache[key]
 
 
@@ -161,7 +172,14 @@ def detections(
     session: Session = Depends(get_session),
 ):
     rows = _query_detections(session, hours, _parse_bbox(bbox), sources.split(",") if sources else None)
-    return {"type": "FeatureCollection", "features": [r.as_feature() for r in rows]}
+    statics = _statics(session)
+    features = []
+    for r in rows:
+        f = r.as_feature()
+        m = statics.match(r.lat, r.lon)
+        f["properties"]["static"] = m[0].type if m else None
+        features.append(f)
+    return {"type": "FeatureCollection", "features": features}
 
 
 @app.get("/api/incidents", dependencies=VIEWER)
@@ -320,6 +338,7 @@ class AOIIn(BaseModel):
     email: str = ""
     webhook_url: str = ""
     telegram_chat_id: str = ""
+    include_static: bool = False  # also alert on volcanoes, gas flares and persistent hotspots
 
     @field_validator("min_confidence")
     @classmethod
@@ -365,6 +384,7 @@ def create_aoi(body: AOIIn, session: Session = Depends(get_session), p: auth.Pri
         email=body.email,
         webhook_url=body.webhook_url,
         telegram_chat_id=body.telegram_chat_id,
+        include_static=body.include_static,
     )
     session.add(aoi)
     session.commit()
@@ -383,7 +403,7 @@ def aoi_detections(aoi_id: int, hours: float = Query(24, gt=0, le=168), session:
     from .alerts import match
 
     aoi = _own_aoi(session, aoi_id, p)
-    hits = match(aoi, _query_detections(session, hours))
+    hits = match(aoi, _query_detections(session, hours), _statics(session))
     return {"count": len(hits), "features": [dict(d.as_feature(), properties={**d.as_feature()["properties"], "distance_km": round(km, 2)}) for d, km in hits]}
 
 

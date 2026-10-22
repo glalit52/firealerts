@@ -256,6 +256,15 @@
   }
 
   // ------------------------------------------------------------------ detections & incidents
+  const STATIC_LABEL = { volcano: "volcano", flare: "flare", persistent: "persistent" };
+  const hideStatic = () => $("#hide-static").checked;
+  const visibleIncidents = () => state.incidents.filter((i) => !(hideStatic() && i.static_source));
+
+  function applyStaticFilter() {
+    const f = hideStatic() ? ["!", ["to-boolean", ["get", "static"]]] : null;
+    ["dets", "dets-heat"].forEach((l) => map.getLayer(l) && map.setFilter(l, f));
+  }
+
   async function loadDetections() {
     const fc = await api(`/api/detections?hours=${state.hours}`);
     const now = Date.now();
@@ -264,6 +273,7 @@
       f.properties.kind = isGeo(f.properties.source) ? "geo" : "polar";
     }
     map.getSource("dets").setData(fc);
+    applyStaticFilter();
   }
 
   async function loadIncidents() {
@@ -277,7 +287,7 @@
   function renderHulls() {
     map.getSource("hulls").setData({
       type: "FeatureCollection",
-      features: state.incidents.filter((i) => i.hull).map((i) => ({ type: "Feature", geometry: i.hull, properties: { id: i.id, sel: i.id === state.selected } })),
+      features: visibleIncidents().filter((i) => i.hull).map((i) => ({ type: "Feature", geometry: i.hull, properties: { id: i.id, sel: i.id === state.selected } })),
     });
   }
 
@@ -290,13 +300,16 @@
 
   function renderIncidents() {
     const q = $("#inc-filter").value.trim().toLowerCase();
-    const items = state.incidents.filter((i) => !q || i.sources.join(" ").toLowerCase().includes(q) || `${i.lat}, ${i.lon}`.includes(q));
-    $("#inc-summary").textContent = `${items.length} incident${items.length === 1 ? "" : "s"} · ${items.filter((i) => i.status === "active").length} active · sorted by priority`;
+    const items = visibleIncidents().filter((i) => !q || i.sources.join(" ").toLowerCase().includes(q) || `${i.lat}, ${i.lon}`.includes(q) || (i.static_source && `${i.static_source.type} ${i.static_source.name}`.toLowerCase().includes(q)));
+    const hidden = state.incidents.length - visibleIncidents().length;
+    $("#inc-summary").textContent = `${items.length} incident${items.length === 1 ? "" : "s"} · ${items.filter((i) => i.status === "active").length} active · sorted by priority${hidden ? ` · ${hidden} static source${hidden === 1 ? "" : "s"} hidden` : ""}`;
     $("#incident-list").innerHTML = items
       .slice(0, 300)
       .map((i) => {
         const [c, bg] = prioColor(i.priority);
-        const tags = i.sources.map((s) => `<span class="tag ${isGeo(s) ? "geo" : ""}">${esc(s.replace("VIIRS_", ""))}</span>`).join("");
+        const st = i.static_source;
+        const tags = (st ? `<span class="tag static ${esc(st.type)}" title="${esc(st.name)} · ${st.distance_km} km">${esc(STATIC_LABEL[st.type] || st.type)}</span>` : "") +
+          i.sources.map((s) => `<span class="tag ${isGeo(s) ? "geo" : ""}">${esc(s.replace("VIIRS_", ""))}</span>`).join("");
         return `<li class="inc ${i.id === state.selected ? "sel" : ""}" data-id="${i.id}">
           <div class="prio" style="color:${c};background:${bg}">${i.priority}</div>
           <div><div class="inc-title">${i.lat.toFixed(3)}, ${i.lon.toFixed(3)}</div>
@@ -313,6 +326,13 @@
     if (li) selectIncident(li.dataset.id);
   });
   $("#inc-filter").addEventListener("input", renderIncidents);
+  if (store.get("fa_hide_static") === "0") $("#hide-static").checked = false;
+  $("#hide-static").addEventListener("change", () => {
+    store.set("fa_hide_static", hideStatic() ? null : "0");
+    applyStaticFilter();
+    renderHulls();
+    renderIncidents();
+  });
   $("#min-count").addEventListener("change", loadIncidents);
 
   function selectIncident(id) {
@@ -401,6 +421,7 @@
       <h2>${title}</h2>
       <div class="muted mono small">${lat.toFixed(4)}, ${lon.toFixed(4)} <span id="place"></span></div>
       ${inc ? `<div class="small muted">First seen ${new Date(inc.first_seen).toLocaleString()} · last ${timeAgo(new Date(inc.last_seen))} · ${inc.sources.map(esc).join(", ")}</div>` : ""}
+      ${inc?.static_source ? `<div class="note">Likely a static heat source, not a wildfire: <b>${esc(inc.static_source.name)}</b> (${inc.static_source.type}, ${inc.static_source.distance_km} km). Priority is down-weighted and area alerts skip it unless the area opts in.</div>` : ""}
       <div class="tiles">
         ${inc ? tile(inc.priority, "Priority") + tile(inc.count, "Fire pixels") + tile(fmt(inc.frp_sum), "FRP MW") : ""}
         ${tile(fmt(fc.seed.properties.area_ha), "Area now ha")}
@@ -660,7 +681,7 @@
     $("#aoi-list").innerHTML = aois
       .map((a) => {
         const ch = [a.email && "e-mail", a.webhook_url && "webhook", a.telegram_chat_id && "telegram"].filter(Boolean).join(", ") || "in-app only";
-        return `<li class="aoi" data-id="${a.id}"><div><b>${esc(a.name)}</b><div class="muted small">buffer ${a.buffer_km} km · ${ch}</div></div><button title="Delete" data-del="${a.id}">×</button></li>`;
+        return `<li class="aoi" data-id="${a.id}"><div><b>${esc(a.name)}</b><div class="muted small">buffer ${a.buffer_km} km · ${ch}${a.include_static ? " · incl. static sources" : ""}</div></div><button title="Delete" data-del="${a.id}">×</button></li>`;
       })
       .join("") || `<li class="muted small">No areas yet.</li>`;
     $("#aoi-list").onclick = async (e) => {
@@ -710,6 +731,7 @@
           email: f.get("email") || "",
           webhook_url: f.get("webhook_url") || "",
           telegram_chat_id: f.get("telegram_chat_id") || "",
+          include_static: f.get("include_static") === "on",
         }),
       });
       e.target.reset();

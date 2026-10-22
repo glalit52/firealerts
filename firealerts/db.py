@@ -82,6 +82,7 @@ class AreaOfInterest(Base):
     email: Mapped[str] = mapped_column(String(255), default="")
     webhook_url: Mapped[str] = mapped_column(Text, default="")
     telegram_chat_id: Mapped[str] = mapped_column(String(64), default="")
+    include_static: Mapped[bool] = mapped_column(Boolean, default=False)  # alert on volcanoes, flares, persistent hotspots
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
 
@@ -95,6 +96,7 @@ class AreaOfInterest(Base):
             "email": self.email,
             "webhook_url": self.webhook_url,
             "telegram_chat_id": self.telegram_chat_id,
+            "include_static": bool(self.include_static),
             "active": self.active,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
@@ -129,6 +131,19 @@ class Alert(Base):
             "lon": self.lon,
             "delivered": self.delivered,
         }
+
+
+class HeatCell(Base):
+    """A ~400 m grid cell and the UTC days (ordinals) it had detections on: learned persistence."""
+
+    __tablename__ = "heat_cells"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)  # "row:col"
+    lat: Mapped[float] = mapped_column(Float)
+    lon: Mapped[float] = mapped_column(Float)
+    days: Mapped[list] = mapped_column(JSON, default=list)
+    n_days: Mapped[int] = mapped_column(Integer, default=0, index=True)
+    last_day: Mapped[int] = mapped_column(Integer, default=0, index=True)
 
 
 class IngestRun(Base):
@@ -242,7 +257,11 @@ class Invite(Base):
 
 # Columns added after the first release: (table, column, DDL type). create_all() does not
 # alter existing tables, so these are added in place on startup.
-_ADDED_COLUMNS = [("aois", "org_id", "INTEGER"), ("alerts", "org_id", "INTEGER")]
+_ADDED_COLUMNS = [
+    ("aois", "org_id", "INTEGER"),
+    ("alerts", "org_id", "INTEGER"),
+    ("aois", "include_static", "BOOLEAN NOT NULL DEFAULT FALSE"),
+]
 
 
 def migrate(eng) -> None:
