@@ -14,7 +14,7 @@ from . import alerts
 from .config import Settings
 from .db import Detection, IngestRun, utcnow
 from .geo import bbox_contains
-from .sources import demo, firms, goes
+from .sources import demo, firms, goes, himawari, meteosat
 
 log = logging.getLogger(__name__)
 
@@ -24,6 +24,10 @@ async def _fetch_live(client: httpx.AsyncClient, cfg: Settings) -> tuple[list[di
     if cfg.goes_enabled:
         for sat in cfg.goes_satellites:
             jobs[sat.upper()] = goes.fetch(client, sat)
+    if cfg.jaxa_ftp_user:
+        jobs["HIMAWARI9"] = himawari.fetch(cfg.jaxa_ftp_user, cfg.jaxa_ftp_password, cfg.himawari_dir)
+    if cfg.lsasaf_user:
+        jobs["METEOSAT"] = meteosat.fetch(client, cfg.lsasaf_user, cfg.lsasaf_password, cfg.lsasaf_url)
     results = await asyncio.gather(*jobs.values(), return_exceptions=True)
     rows: list[dict] = []
     per_source: dict[str, int] = {}

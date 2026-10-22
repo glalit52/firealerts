@@ -7,7 +7,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY firealerts ./firealerts
 COPY web ./web
 
-ENV DATABASE_URL=sqlite:////data/firealerts.db
+ENV DATABASE_URL=sqlite:////data/firealerts.db \
+    MODEL_PATH=/data/ignition_model.joblib \
+    NUMBA_CACHE_DIR=/tmp/numba-cache
 VOLUME /data
 EXPOSE 8000
 CMD ["uvicorn", "firealerts.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -74,6 +74,7 @@ class AreaOfInterest(Base):
     __tablename__ = "aois"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    org_id: Mapped[int | None] = mapped_column(Integer, index=True, nullable=True)
     name: Mapped[str] = mapped_column(String(120))
     geometry: Mapped[dict] = mapped_column(JSON)  # GeoJSON Polygon
     buffer_km: Mapped[float] = mapped_column(Float, default=0.0)
@@ -103,6 +104,7 @@ class Alert(Base):
     __tablename__ = "alerts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    org_id: Mapped[int | None] = mapped_column(Integer, index=True, nullable=True)
     aoi_id: Mapped[int] = mapped_column(Integer, index=True)
     aoi_name: Mapped[str] = mapped_column(String(120))
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, index=True)
@@ -179,5 +181,81 @@ engine = make_engine(settings.database_url)
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(120), default="")
+    password_hash: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+
+    def as_dict(self) -> dict:
+        return {"id": self.id, "email": self.email, "name": self.name, "created_at": self.created_at.isoformat()}
+
+
+class Organization(Base):
+    __tablename__ = "organizations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(120))
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+
+
+class Membership(Base):
+    __tablename__ = "memberships"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    org_id: Mapped[int] = mapped_column(Integer, index=True)
+    role: Mapped[str] = mapped_column(String(16), default="member")  # owner / admin / member / viewer
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+
+
+class AuthToken(Base):
+    __tablename__ = "auth_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    kind: Mapped[str] = mapped_column(String(8), default="session")  # session / api
+    name: Mapped[str] = mapped_column(String(120), default="")
+    prefix: Mapped[str] = mapped_column(String(16), default="")
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+    expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+
+
+class Invite(Base):
+    __tablename__ = "invites"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    org_id: Mapped[int] = mapped_column(Integer, index=True)
+    email: Mapped[str] = mapped_column(String(255))
+    role: Mapped[str] = mapped_column(String(16), default="member")
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    invited_by: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+    accepted_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+
+
+# Columns added after the first release: (table, column, DDL type). create_all() does not
+# alter existing tables, so these are added in place on startup.
+_ADDED_COLUMNS = [("aois", "org_id", "INTEGER"), ("alerts", "org_id", "INTEGER")]
+
+
+def migrate(eng) -> None:
+    from sqlalchemy import inspect, text
+
+    insp = inspect(eng)
+    with eng.begin() as conn:
+        for table, column, ddl in _ADDED_COLUMNS:
+            if table in insp.get_table_names() and column not in {c["name"] for c in insp.get_columns(table)}:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+
+
 def init_db(eng=None) -> None:
-    Base.metadata.create_all(eng or engine)
+    eng = eng or engine
+    Base.metadata.create_all(eng)
+    migrate(eng)

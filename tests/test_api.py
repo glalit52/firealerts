@@ -45,6 +45,11 @@ def test_aoi_alert_flow_and_incident_forecast(client):
     fc = client.get(f"/api/incidents/{incs[0]['id']}/forecast?hours=12&members=8").json()
     assert fc["perimeters"]["features"] and fc["stats"][-1]["horizon_h"] == 12
     assert fc["weather_source"] == "demo"
+    assert fc["model"] == "raster" and fc["terrain"]["source"] == "synthetic" and fc["images"]["arrival"]
+
+    uni = client.get(f"/api/incidents/{incs[0]['id']}/forecast?hours=6&members=4&model=uniform").json()
+    assert uni["model"] == "uniform" and uni["burn_probability"]["features"]
+    assert client.get(f"/api/incidents/{incs[0]['id']}/forecast?model=bogus").status_code == 400
 
 
 def test_point_forecast_and_danger(client):
@@ -58,6 +63,12 @@ def test_point_forecast_and_danger(client):
     g = client.get("/api/danger/grid?bbox=-66,-33,-62,-29&n=3").json()
     assert len(g["features"]) == 9 and len(g["dates"]) == len(g["features"][0]["properties"]["fwi"])
     assert client.get("/api/danger/grid?bbox=-180,-80,180,80").status_code == 400
+
+    risk = client.get("/api/risk/ignition?bbox=-66,-33,-62,-29&n=3").json()
+    assert len(risk["features"]) == 9 and risk["model"]["kind"] in ("baseline", "trained")
+    p = risk["features"][0]["properties"]["p"]
+    assert len(p) == len(risk["dates"]) and all(0 <= v <= 1 for v in p)
+    assert client.get("/api/risk/model").json()["features"]
 
 
 def test_aoi_validation_and_delete(client):

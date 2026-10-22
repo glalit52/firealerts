@@ -101,6 +101,8 @@ input[type="range"] { padding: 0; accent-color: var(--accent); width: 100%; }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
 .seg button { background: none; border: 0; color: var(--muted); padding: 6px 10px; cursor: pointer; font: inherit; font-size: 12px; }
 .seg button.on { background: var(--panel-2); color: var(--text); }
+.seg.wide { display: flex; margin-bottom: 10px; }
+.seg.wide button { flex: 1; padding: 8px 6px; }
 .check { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 12px; margin-top: 8px; }
 
 /* ---------------------------------------------------------------- side panel */
@@ -188,6 +190,9 @@ input[type="range"] { padding: 0; accent-color: var(--accent); width: 100%; }
 .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: end; margin: 10px 0; }
 .form-row label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+.form-row.three { grid-template-columns: 1.4fr 1fr 0.8fr auto; }
+.fuelbar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; margin: 6px 0; }
+.fuelbar i { display: block; height: 100%; }
 .danger-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(40px, 1fr)); gap: 3px; margin: 8px 0; }
 .danger-strip div { border-radius: 5px; padding: 5px 2px; text-align: center; font-size: 10px; color: #111; font-weight: 600; }
 .danger-strip div small { display: block; font-weight: 500; opacity: 0.75; }
@@ -208,3 +213,27 @@ input[type="range"] { padding: 0; accent-color: var(--accent); width: 100%; }
   .drawer { left: 8px; right: 8px; width: auto; top: auto; height: 60vh; }
   .controls .ctl { display: none; }
 }
+
+/* ---------------------------------------------------------------- accounts */
+.account { position: relative; }
+.account-btn { display: flex; align-items: center; gap: 8px; background: none; border: 1px solid var(--line); color: var(--text); border-radius: 8px; padding: 4px 10px 4px 4px; cursor: pointer; font: inherit; font-size: 12px; }
+.avatar { width: 24px; height: 24px; border-radius: 50%; background: linear-gradient(135deg, #ff7a3d, #a1124a); display: grid; place-items: center; font-weight: 700; font-size: 11px; color: #fff; }
+.menu { position: absolute; right: 0; top: 40px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); min-width: 240px; padding: 6px; z-index: 20; }
+.menu button { display: block; width: 100%; text-align: left; background: none; border: 0; color: var(--text); padding: 8px 10px; border-radius: 6px; cursor: pointer; font: inherit; }
+.menu button:hover { background: var(--panel-2); }
+.menu .sep { border-top: 1px solid var(--line); margin: 6px 0; }
+.menu .label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding: 6px 10px 2px; }
+.menu button.current::after { content: "✓"; float: right; color: var(--accent); }
+.modal { position: fixed; inset: 0; background: rgba(5, 7, 10, 0.7); display: grid; place-items: center; z-index: 30; backdrop-filter: blur(3px); padding: 16px; }
+.modal-card { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); width: min(460px, 100%); max-height: 90vh; overflow-y: auto; padding: 22px; }
+.modal-card .close { position: absolute; top: 10px; right: 12px; background: none; border: 0; color: var(--muted); font-size: 22px; cursor: pointer; }
+.modal-card h2 { margin: 0 0 4px; font-size: 18px; }
+.modal-card form { display: grid; gap: 10px; margin-top: 14px; }
+.modal-card label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+.modal-card input, .modal-card select { width: 100%; }
+.modal-card .error { color: var(--bad); font-size: 12px; min-height: 16px; }
+.modal-card table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 8px 0; }
+.modal-card td { padding: 6px 4px; border-bottom: 1px solid var(--line); }
+.secret { font-family: "JetBrains Mono", monospace; font-size: 12px; background: var(--panel-2); border: 1px dashed var(--accent); padding: 8px; border-radius: 6px; word-break: break-all; }
+.linklike { background: none; border: 0; color: var(--accent); cursor: pointer; font: inherit; padding: 0; }
+.modal-card .row2 { display: grid; grid-template-columns: 2fr 1fr; gap: 8px; }

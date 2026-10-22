@@ -30,8 +30,22 @@
   };
 
   // ------------------------------------------------------------------ API
+  const store = {
+    get: (k) => { try { return localStorage.getItem(k); } catch (_) { return null; } },
+    set: (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (_) { /* private mode */ } },
+  };
+
   async function api(path, opts = {}) {
-    const res = await fetch(path, { headers: { "content-type": "application/json" }, ...opts });
+    const headers = { "content-type": "application/json" };
+    const token = store.get("fa_token");
+    if (token) headers.authorization = `Bearer ${token}`;
+    const org = store.get("fa_org");
+    if (org && token) headers["x-org-id"] = org;
+    const res = await fetch(path, { ...opts, headers: { ...headers, ...(opts.headers || {}) } });
+    if (res.status === 401 && !path.startsWith("/api/auth/")) {
+      if (token) { store.set("fa_token", null); store.set("fa_org", null); }
+      if (state.me?.auth_required !== false) showAuth("login");
+    }
     if (!res.ok) {
       let msg = res.statusText;
       try { msg = (await res.json()).detail || msg; } catch (_) { /* not json */ }
@@ -50,7 +64,7 @@
 
   // ------------------------------------------------------------------ map
   const empty = { type: "FeatureCollection", features: [] };
-  const hash = location.hash.slice(1).split(",").map(Number);
+  const hash = location.hash.includes("invite=") ? [] : location.hash.slice(1).split(",").map(Number);
   const map = new maplibregl.Map({
     container: "map",
     center: hash.length === 3 && hash.every(Number.isFinite) ? [hash[1], hash[0]] : [-30, 5],
@@ -121,8 +135,10 @@
     map.addLayer({
       id: "perims-line", type: "line", source: "perims", filter: ["==", ["get", "kind"], "likely"],
       paint: { "line-color": ["get", "color"], "line-width": 2 },
+      layout: { "line-cap": "round", "line-join": "round" },
     });
     map.addLayer({ id: "seed", type: "fill", source: "seed", paint: { "fill-color": "#ff3b3b", "fill-opacity": 0.5 } });
+    map.addLayer({ id: "seed-line", type: "line", source: "seed", paint: { "line-color": "#ff3b3b", "line-width": 2.5 }, layout: { "line-cap": "round" } });
     map.addLayer({
       id: "hulls", type: "line", source: "hulls",
       paint: { "line-color": "#ff8a4c", "line-width": ["case", ["boolean", ["get", "sel"], false], 2.5, 1], "line-opacity": 0.7 },
@@ -214,9 +230,9 @@
     pill.textContent = mode === "live" ? "LIVE" : mode === "demo" ? "DEMO DATA" : mode.toUpperCase();
     pill.className = `pill ${mode === "live" ? "live" : "demo"}`;
     pill.title = mode === "demo" ? "Satellite feeds unreachable or DATA_MODE=demo: showing synthetic fires" : "Live satellite feeds";
-    const groups = { VIIRS: 0, MODIS: 0, GOES: 0, OTHER: 0 };
+    const groups = { VIIRS: 0, MODIS: 0, GEO: 0, OTHER: 0 };
     for (const [k, v] of Object.entries(s.by_source_24h)) {
-      const g = k.startsWith("VIIRS") ? "VIIRS" : k.startsWith("MODIS") ? "MODIS" : k.startsWith("GOES") ? "GOES" : "OTHER";
+      const g = k.startsWith("VIIRS") ? "VIIRS" : k.startsWith("MODIS") ? "MODIS" : isGeo(k) ? "GEO" : "OTHER";
       groups[g] += v;
     }
     const latest = s.latest_detection ? timeAgo(new Date(s.latest_detection)) : "–";
@@ -225,10 +241,11 @@
       stat(fmt(s.detections_24h), "Detections 24 h") +
       stat(fmt(groups.VIIRS), "VIIRS 375 m") +
       stat(fmt(groups.MODIS), "MODIS 1 km") +
-      stat(fmt(groups.GOES), "GOES 10 min") +
+      stat(fmt(groups.GEO), "Geostationary") +
       stat(latest, "Latest pixel") +
       stat(lastRun, "Last sync");
   }
+  const isGeo = (src) => /^(GOES|HIMAWARI|METEOSAT)/.test(src);
   const stat = (v, l) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`;
   function timeAgo(d) {
     const m = Math.round((Date.now() - d.getTime()) / 60000);
@@ -244,7 +261,7 @@
     const now = Date.now();
     for (const f of fc.features) {
       f.properties.age_h = (now - new Date(f.properties.acq_time).getTime()) / 3.6e6;
-      f.properties.kind = f.properties.source.startsWith("GOES") ? "geo" : "polar";
+      f.properties.kind = isGeo(f.properties.source) ? "geo" : "polar";
     }
     map.getSource("dets").setData(fc);
   }
@@ -279,7 +296,7 @@
       .slice(0, 300)
       .map((i) => {
         const [c, bg] = prioColor(i.priority);
-        const tags = i.sources.map((s) => `<span class="tag ${s.startsWith("GOES") ? "geo" : ""}">${esc(s.replace("VIIRS_", ""))}</span>`).join("");
+        const tags = i.sources.map((s) => `<span class="tag ${isGeo(s) ? "geo" : ""}">${esc(s.replace("VIIRS_", ""))}</span>`).join("");
         return `<li class="inc ${i.id === state.selected ? "sel" : ""}" data-id="${i.id}">
           <div class="prio" style="color:${c};background:${bg}">${i.priority}</div>
           <div><div class="inc-title">${i.lat.toFixed(3)}, ${i.lon.toFixed(3)}</div>
@@ -309,8 +326,31 @@
   }
 
   // ------------------------------------------------------------------ forecast drawer
+  const IMAGE_LAYERS = { arrival: 0.85, burn: 0.9, fuel: 0.75 };
+
+  function setForecastImages(images) {
+    for (const [name, opacity] of Object.entries(IMAGE_LAYERS)) {
+      const id = `img-${name}`;
+      if (!images) {
+        if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", "none");
+        continue;
+      }
+      const spec = { url: images[name], coordinates: images.coordinates };
+      if (map.getSource(id)) map.getSource(id).updateImage(spec);
+      else {
+        map.addSource(id, { type: "image", ...spec });
+        map.addLayer({ id, type: "raster", source: id, paint: { "raster-opacity": opacity, "raster-resampling": "nearest", "raster-fade-duration": 0 }, layout: { visibility: "none" } }, "perims-p90");
+      }
+    }
+  }
+
+  function showImage(name, on) {
+    if (map.getLayer(`img-${name}`)) map.setLayoutProperty(`img-${name}`, "visibility", on ? "visible" : "none");
+  }
+
   function clearForecast() {
     ["perims", "seed", "burn", "whatif-pt"].forEach((s) => map.getSource(s).setData(empty));
+    setForecastImages(null);
   }
 
   $("#drawer-close").addEventListener("click", () => {
@@ -328,13 +368,14 @@
     const fuel = opts.fuel || "auto";
     const curing = opts.curing ?? 85;
     const hours = opts.hours || 24;
+    const model = opts.model || "auto";
     const title = target.kind === "incident" ? "Fire incident" : "What-if ignition";
     const lat = target.kind === "incident" ? target.inc.lat : target.lat;
     const lon = target.kind === "incident" ? target.inc.lon : target.lon;
-    body.innerHTML = `<h2>${title}</h2><div class="muted mono small">${lat.toFixed(4)}, ${lon.toFixed(4)} <span id="place"></span></div><div class="loading">Running ${hours} h ensemble spread forecast</div>`;
+    body.innerHTML = `<h2>${title}</h2><div class="muted mono small">${lat.toFixed(4)}, ${lon.toFixed(4)} <span id="place"></span></div><div class="loading">Running ${hours} h ${model === "uniform" ? "" : "terrain-aware "}ensemble spread forecast</div>`;
     reverseGeocode(lat, lon);
 
-    const qs = `fuel=${encodeURIComponent(fuel)}&curing=${curing}&hours=${hours}`;
+    const qs = `fuel=${encodeURIComponent(fuel)}&curing=${curing}&hours=${hours}&model=${model}`;
     let fc;
     try {
       fc = target.kind === "incident" ? await api(`/api/incidents/${target.inc.id}/forecast?${qs}`) : await api(`/api/forecast/spread?lat=${lat}&lon=${lon}&${qs}`);
@@ -350,7 +391,9 @@
     const today = fc.danger.find((d) => d.forecast) || fc.danger[fc.danger.length - 1];
     const last = fc.stats[fc.stats.length - 1];
     const maxHfi = Math.max(...fc.hourly.map((h) => h.intensity_kw_m));
-    const fuelOpts = [`<option value="auto">Auto (${fc.fuel.code})</option>`]
+    const raster = fc.model === "raster";
+    const hasGrass = raster ? Object.keys(fc.fuel_mix || {}).some((c) => c.startsWith("O1")) : fc.fuel.code.startsWith("O1");
+    const fuelOpts = [`<option value="auto">${raster ? "Land cover" : `Auto (${fc.fuel.code})`}</option>`]
       .concat(state.fuels.map((f) => `<option value="${f.code}" ${f.code === fuel ? "selected" : ""}>${f.code} · ${esc(f.name)}</option>`))
       .join("");
 
@@ -373,19 +416,31 @@
         ${tile(fmt(cur.isi, 1), "ISI")}
         ${tile(`<span style="color:${DANGER[today.danger][1]}">${fmt(today.fwi, 0)}</span>`, `FWI · ${DANGER[today.danger][0]}`)}
       </div>
-      <h3>Spread forecast · ${fc.members}-member ensemble</h3>
-      <div class="form-row">
-        <label>Fuel type <select id="f-fuel">${fuelOpts}</select></label>
+      <h3>Spread forecast · ${fc.members}-member ensemble <span class="tag ${raster ? "geo" : ""}">${raster ? `terrain-aware · ${fc.terrain.cell_m} m` : "uniform fuel"}</span></h3>
+      ${fc.model_note ? `<div class="note">${esc(fc.model_note)}</div>` : ""}
+      <div class="form-row three">
+        <label>Fuel <select id="f-fuel">${fuelOpts}</select></label>
+        <label>Model <select id="f-model">${[["auto", "Auto"], ["raster", "Terrain"], ["uniform", "Uniform"]].map(([v, l]) => `<option value="${v}" ${v === model ? "selected" : ""}>${l}</option>`).join("")}</select></label>
         <label>Horizon <select id="f-hours">${[12, 24, 48, 72].map((h) => `<option ${h === hours ? "selected" : ""} value="${h}">${h} h</option>`).join("")}</select></label>
         <button class="btn primary" id="f-run">Re-run</button>
       </div>
-      <label class="ctl" id="curing-row" ${fc.fuel.code.startsWith("O1") ? "" : "hidden"}>Grass curing <input type="range" id="f-curing" min="0" max="100" value="${curing}" /> <span class="mono" id="curing-v">${curing}%</span></label>
+      <label class="ctl" id="curing-row" ${hasGrass ? "" : "hidden"}>Grass curing <input type="range" id="f-curing" min="0" max="100" value="${curing}" /> <span class="mono" id="curing-v">${curing}%</span></label>
       <table class="horizons">
         <thead><tr><th>Horizon</th><th>Local time</th><th>P10 ha</th><th>P50 ha</th><th>P90 ha</th><th>Run km</th></tr></thead>
         <tbody>${fc.stats.map((s) => `<tr><td><span class="swatch" style="background:${HORIZON[s.horizon_h]}"></span>+${s.horizon_h} h</td><td>${new Date(s.time).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })}</td><td>${fmt(s.area_ha_p10)}</td><td><b>${fmt(s.area_ha_p50)}</b></td><td>${fmt(s.area_ha_p90)}</td><td>${fmt(s.max_run_km, 1)}</td></tr>`).join("")}</tbody>
       </table>
       <label class="check"><input type="checkbox" id="show-p90" checked /> P90 envelope (dashed)</label>
       <label class="check"><input type="checkbox" id="show-burn" /> Burn probability at +${last.horizon_h} h</label>
+      ${raster ? `<label class="check"><input type="checkbox" id="show-arrival" checked /> Arrival time (P50)</label>
+      <label class="check"><input type="checkbox" id="show-fuel" /> Fuel map</label>
+      <h3>Terrain &amp; fuels</h3>
+      <div class="tiles">
+        ${tile(`${fmt(fc.terrain.elevation_m[0])}–${fmt(fc.terrain.elevation_m[1])}`, "Elevation m")}
+        ${tile(`${fmt(fc.terrain.slope_pct_p90)}%`, "Slope P90")}
+        ${tile(`${fmt(fc.terrain.size_km)} km`, "Domain")}
+      </div>
+      ${fuelBar(fc.fuel_mix)}
+      <div class="muted small">${esc(fc.terrain.source)}${fc.domain_limited ? " · <b>fire reaches the domain edge: areas are a lower bound</b>" : ""}</div>` : ""}
       <h3>Hourly behaviour</h3>
       ${chart(fc.hourly)}
       <h3>Fire danger outlook</h3>
@@ -393,20 +448,41 @@
       <div class="note">
         Fuel <b>${esc(fc.fuel.code)}</b> (${esc(fc.fuel.name)}). Moisture codes FFMC ${fc.fwi_state.ffmc} · DMC ${fc.fwi_state.dmc} · DC ${fc.fwi_state.dc} · BUI ${fc.fwi_state.bui}.
         Weather: ${fc.weather_source === "demo" ? "synthetic (offline)" : "Open-Meteo"}.
-        Canadian FBP rate-of-spread with Huygens elliptical growth; ensemble perturbs wind speed, direction and ROS.
-        Terrain, fuel breaks and suppression are not modelled — treat as decision support, not ground truth.
+        ${raster
+          ? "Canadian FBP rate of spread per cell with slope-equivalent wind, fuel from ESA WorldCover, non-fuel cells as barriers, arrival time by ordered-upwind minimum travel time."
+          : "Canadian FBP rate of spread with exact Huygens elliptical growth over a single fuel; terrain and barriers are ignored."}
+        Ensemble perturbs wind speed, direction and ROS. Suppression is not modelled — treat as decision support, not ground truth.
       </div>`;
 
-    $("#f-run").onclick = () => openForecast(target, { fuel: $("#f-fuel").value, hours: +$("#f-hours").value, curing: +($("#f-curing")?.value ?? 85) });
+    $("#f-run").onclick = () => openForecast(target, { fuel: $("#f-fuel").value, model: $("#f-model").value, hours: +$("#f-hours").value, curing: +($("#f-curing")?.value ?? 85) });
     $("#f-curing").oninput = (e) => ($("#curing-v").textContent = `${e.target.value}%`);
     $("#show-p90").onchange = (e) => map.setLayoutProperty("perims-p90", "visibility", e.target.checked ? "visible" : "none");
-    $("#show-burn").onchange = (e) => map.setLayoutProperty("burn-fill", "visibility", e.target.checked ? "visible" : "none");
+    $("#show-burn").onchange = (e) => (raster ? showImage("burn", e.target.checked) : map.setLayoutProperty("burn-fill", "visibility", e.target.checked ? "visible" : "none"));
     map.setLayoutProperty("perims-p90", "visibility", "visible");
     map.setLayoutProperty("burn-fill", "visibility", "none");
+    if (raster) {
+      $("#show-arrival").onchange = (e) => showImage("arrival", e.target.checked);
+      $("#show-fuel").onchange = (e) => showImage("fuel", e.target.checked);
+      showImage("arrival", true);
+    }
     reverseGeocode(lat, lon);
   }
 
   const tile = (v, l) => `<div class="tile"><b>${v}</b><span>${l}</span></div>`;
+
+  const FUEL_COLORS = { C1: "#5e8c5a", C2: "#225a32", C3: "#2e6e3c", C4: "#3c7846", C5: "#508250", C6: "#467d4b", C7: "#6e8c46", D1: "#82aa5a", S1: "#be9646", O1a: "#e1d26e", O1b: "#f0be5a", "non-fuel": "#283c78" };
+  function fuelBar(mix) {
+    const entries = Object.entries(mix || {}).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+    const name = (c) => (state.fuels.find((f) => f.code === c) || { name: c === "non-fuel" ? "Water, built-up, bare" : c }).name;
+    return `<div class="fuelbar">${entries.map(([c, v]) => `<i style="width:${v}%;background:${FUEL_COLORS[c] || "#888"}" title="${esc(c)} ${v}%"></i>`).join("")}</div>
+      <div class="legend">${entries.map(([c, v]) => `<span><i style="background:${FUEL_COLORS[c] || "#888"}"></i>${esc(c)} ${esc(name(c))} ${fmt(v)}%</span>`).join("")}</div>`;
+  }
+
+  function flatCoords(geom, out = []) {
+    const walk = (a) => (typeof a[0] === "number" ? out.push(a) : a.forEach(walk));
+    walk(geom.coordinates);
+    return out;
+  }
 
   function drawForecast(fc) {
     const feats = fc.perimeters.features
@@ -415,10 +491,12 @@
     map.getSource("perims").setData({ type: "FeatureCollection", features: feats });
     map.getSource("seed").setData({ type: "FeatureCollection", features: [fc.seed] });
     map.getSource("burn").setData(fc.burn_probability);
+    setForecastImages(fc.images || null);
     const outer = feats.find((f) => f.properties.kind === "p90");
-    if (outer) {
+    const pts = outer ? flatCoords(outer.geometry) : [];
+    if (pts.length) {
       const b = new maplibregl.LngLatBounds();
-      outer.geometry.coordinates[0].forEach((c) => b.extend(c));
+      pts.forEach((c) => b.extend(c));
       map.fitBounds(b, { padding: { top: 60, bottom: 60, left: 60, right: 480 }, maxZoom: 13, duration: 900 });
     }
   }
@@ -475,6 +553,31 @@
   $("#whatif").addEventListener("click", () => setPicking(state.picking === "whatif" ? null : "whatif"));
 
   // ------------------------------------------------------------------ danger
+  const PROB_BANDS = [[0.01, "#3ecf8e", "<1%"], [0.05, "#ffd84d", "1–5%"], [0.15, "#ff9a3c", "5–15%"], [0.3, "#ff4d4d", "15–30%"], [Infinity, "#a1124a", ">30%"]];
+  const probColor = (p) => PROB_BANDS.find(([u]) => p < u)[1];
+  const RISK_HELP = {
+    fwi: "Canadian Fire Weather Index computed from 45 days of observed weather plus a 7-day forecast. Click anywhere on the map for a point outlook.",
+    ignition: "Probability that at least one satellite fire detection occurs in each cell that day, from a gradient-boosted model on fire weather, land cover, terrain, season and recent fire activity.",
+  };
+  state.riskKind = "fwi";
+
+  function renderLegend() {
+    $("#danger-legend").innerHTML =
+      state.riskKind === "fwi"
+        ? Object.values(DANGER).map(([l, c]) => `<span><i class="danger-chip" style="background:${c}"></i>${l}</span>`).join("")
+        : PROB_BANDS.map(([, c, l]) => `<span><i class="danger-chip" style="background:${c}"></i>${l}</span>`).join("");
+  }
+
+  $$("#risk-kind button").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      $$("#risk-kind button").forEach((x) => x.classList.toggle("on", x === btn));
+      state.riskKind = btn.dataset.v;
+      $("#risk-help").textContent = RISK_HELP[state.riskKind];
+      renderLegend();
+      if (state.danger) loadDangerGrid();
+    })
+  );
+
   async function loadDangerGrid() {
     // Never go finer than the ~10 km weather model: expand small views to at least 3° x 2°.
     const b = map.getBounds();
@@ -483,26 +586,41 @@
     const w = Math.max(-180, c.lng - halfW), e = Math.min(180, c.lng + halfW);
     const s = Math.max(-85, c.lat - halfH), n = Math.min(85, c.lat + halfH);
     const btn = $("#danger-load");
+    const kind = state.riskKind;
     btn.disabled = true;
-    btn.textContent = "Computing FWI grid…";
+    btn.textContent = kind === "fwi" ? "Computing FWI grid…" : "Scoring ignition risk…";
     try {
-      state.danger = await api(`/api/danger/grid?bbox=${w},${s},${e},${n}&n=10`);
+      const path = kind === "fwi" ? "/api/danger/grid" : "/api/risk/ignition";
+      state.danger = await api(`${path}?bbox=${w},${s},${e},${n}&n=10`);
+      state.danger.kind = kind;
       $("#danger-controls").hidden = false;
       $("#danger-day").max = state.danger.dates.length - 1;
       $("#danger-day").value = Math.min(1, state.danger.dates.length - 1);
+      const info = $("#model-info");
+      if (kind === "ignition") {
+        const m = state.danger.model;
+        info.hidden = false;
+        info.innerHTML = m.kind === "trained"
+          ? `Trained model · ${esc(m.region || "")} · test ROC AUC <b>${m.test.roc_auc ?? "–"}</b> (FWI baseline ${m.test_baseline.roc_auc ?? "–"}) · Brier ${m.test.brier} · trained ${new Date(m.trained_at).toLocaleDateString()}`
+          : `Using the heuristic baseline: no trained model yet. Run <span class="mono">python -m firealerts.ml.train</span> to fit one for your region.${m.warning ? ` (${esc(m.warning)})` : ""}`;
+      } else info.hidden = true;
       renderDanger();
     } catch (err) {
       toast(err.message);
     } finally {
       btn.disabled = false;
-      btn.textContent = "Show danger for current view";
+      btn.textContent = "Show for current view";
     }
   }
 
   function renderDanger() {
     if (!state.danger) return;
     const day = +$("#danger-day").value;
-    const feats = state.danger.features.map((f) => ({ ...f, properties: { color: DANGER[f.properties.danger[day]][1], fwi: f.properties.fwi[day] } }));
+    const ign = state.danger.kind === "ignition";
+    const feats = state.danger.features.map((f) => ({
+      ...f,
+      properties: ign ? { color: probColor(f.properties.p[day]), p: f.properties.p[day] } : { color: DANGER[f.properties.danger[day]][1], fwi: f.properties.fwi[day] },
+    }));
     map.getSource("danger").setData({ type: "FeatureCollection", features: feats });
     const d = new Date(state.danger.dates[day] + "T12:00:00");
     $("#danger-date").textContent = `${d.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" })}${day === 0 ? " (today, observed)" : ""}`;
@@ -533,7 +651,7 @@
   $("#danger-load").addEventListener("click", loadDangerGrid);
   $("#danger-day").addEventListener("input", renderDanger);
   $("#danger-visible").addEventListener("change", (e) => map.setLayoutProperty("danger-fill", "visibility", e.target.checked ? "visible" : "none"));
-  $("#danger-legend").innerHTML = Object.values(DANGER).map(([l, c]) => `<span><i class="danger-chip" style="background:${c}"></i>${l}</span>`).join("");
+  renderLegend();
 
   // ------------------------------------------------------------------ alerts
   async function loadAois() {
@@ -644,10 +762,207 @@
     await Promise.all([loadStatus(), loadDetections(), loadIncidents()]).catch((err) => toast(err.message));
   }
 
+  // ------------------------------------------------------------------ accounts
+  const modal = {
+    open(html) { $("#modal-body").innerHTML = html; $("#modal").hidden = false; },
+    close() { if (state.me?.auth_required && !state.me.authenticated) return; $("#modal").hidden = true; },
+  };
+  $("#modal-close").addEventListener("click", () => modal.close());
+  $("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") modal.close(); });
+
+  async function loadMe() {
+    try {
+      state.me = await api("/api/me");
+    } catch (_) {
+      state.me = { authenticated: false, auth_required: true };
+    }
+    renderAccount();
+    return state.me;
+  }
+
+  function renderAccount() {
+    const el = $("#account");
+    const me = state.me || {};
+    if (!me.authenticated) {
+      el.innerHTML = `<button class="btn" id="signin">Sign in</button>`;
+      $("#signin").onclick = () => showAuth("login");
+      return;
+    }
+    const initials = (me.user.name || me.user.email).split(/[\s@.]+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("");
+    el.innerHTML = `<button class="account-btn" id="account-btn"><span class="avatar">${esc(initials)}</span>${esc(me.org.name)}</button>
+      <div class="menu" id="account-menu" hidden>
+        <div class="label">${esc(me.user.email)} · ${esc(me.role)}</div>
+        <div class="sep"></div>
+        <div class="label">Organisations</div>
+        ${me.memberships.map((m) => `<button data-org="${m.org_id}" class="${m.org_id === me.org.id ? "current" : ""}">${esc(m.org_name)} <span class="muted small">${esc(m.role)}</span></button>`).join("")}
+        <button data-act="new-org">+ New organisation</button>
+        <div class="sep"></div>
+        <button data-act="team">Team &amp; invites</button>
+        <button data-act="keys">API keys</button>
+        <div class="sep"></div>
+        <button data-act="logout">Sign out</button>
+      </div>`;
+    $("#account-btn").onclick = (e) => { e.stopPropagation(); $("#account-menu").hidden = !$("#account-menu").hidden; };
+    $("#account-menu").onclick = async (e) => {
+      const b = e.target.closest("button");
+      if (!b) return;
+      $("#account-menu").hidden = true;
+      if (b.dataset.org) { store.set("fa_org", b.dataset.org); await afterAuth(); return; }
+      ({ "new-org": showNewOrg, team: showTeam, keys: showKeys, logout })[b.dataset.act]?.();
+    };
+  }
+  document.addEventListener("click", () => { const m = $("#account-menu"); if (m) m.hidden = true; });
+
+  function showAuth(mode = "login", invite = null) {
+    if (!$("#modal").hidden && $("#auth-form")) return;
+    const reg = mode === "register";
+    const me = state.me || {};
+    modal.open(`
+      <h2>${reg ? "Create your account" : "Sign in to Firealerts"}</h2>
+      <div class="muted small">${invite ? `You're invited to join <b>${esc(invite.org_name)}</b> as ${esc(invite.role)}.` : reg ? "You'll get your own organisation; invite your team afterwards." : "Monitor fires, forecasts and alerts for your organisation."}</div>
+      <form id="auth-form">
+        ${reg ? `<label>Name <input name="name" autocomplete="name" /></label>` : ""}
+        <label>E-mail <input name="email" type="email" required autocomplete="email" value="${esc(invite?.email || "")}" /></label>
+        <label>Password <input name="password" type="password" required minlength="${reg ? 8 : 1}" autocomplete="${reg ? "new-password" : "current-password"}" /></label>
+        ${reg && !invite ? `<label>Organisation name <input name="org_name" placeholder="e.g. Sierra Fire Brigade" /></label>` : ""}
+        <div class="error" id="auth-error"></div>
+        <button class="btn primary" type="submit">${reg ? "Create account" : "Sign in"}</button>
+      </form>
+      <p class="small muted">${reg ? `Already have an account? <button class="linklike" id="auth-switch">Sign in</button>` : me.registration_open !== false || invite ? `New here? <button class="linklike" id="auth-switch">Create an account</button>` : "Registration is by invitation."}</p>`);
+    $("#auth-switch")?.addEventListener("click", () => { $("#modal").hidden = true; showAuth(reg ? "login" : "register", invite); });
+    $("#auth-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const f = Object.fromEntries(new FormData(e.target));
+      if (invite) f.invite_token = invite.token;
+      try {
+        const r = await api(reg ? "/api/auth/register" : "/api/auth/login", { method: "POST", body: JSON.stringify(f) });
+        store.set("fa_token", r.token);
+        if (invite && !reg) await api(`/api/invites/${invite.token}/accept`, { method: "POST" }).catch((err) => toast(err.message));
+        const target = invite ? r.memberships.find((m) => m.org_name === invite.org_name) : null;
+        store.set("fa_org", String((target || r.memberships[0] || {}).org_id || ""));
+        if (invite) history.replaceState(null, "", location.pathname);
+        $("#modal").hidden = true;
+        await afterAuth();
+        toast(reg ? "Welcome to Firealerts" : "Signed in");
+      } catch (err) {
+        $("#auth-error").textContent = err.message;
+      }
+    });
+  }
+
+  async function afterAuth() {
+    await loadMe();
+    if (!state.fuels.length) state.fuels = await api("/api/fuels").catch(() => []);
+    if (!state.timer) state.timer = setInterval(refreshData, 120000);
+    state.danger = null;
+    await refreshData();
+    loadAois().catch(() => {});
+    loadAlerts().catch(() => {});
+  }
+
+  async function logout() {
+    await api("/api/auth/logout", { method: "POST" }).catch(() => {});
+    store.set("fa_token", null);
+    store.set("fa_org", null);
+    await loadMe();
+    if (state.me.auth_required) showAuth("login");
+    else await afterAuth();
+  }
+
+  function showNewOrg() {
+    modal.open(`<h2>New organisation</h2><form id="org-form"><label>Name <input name="name" required /></label><div class="error" id="org-error"></div><button class="btn primary">Create</button></form>`);
+    $("#org-form").onsubmit = async (e) => {
+      e.preventDefault();
+      try {
+        const o = await api("/api/orgs", { method: "POST", body: JSON.stringify({ name: new FormData(e.target).get("name") }) });
+        store.set("fa_org", String(o.id));
+        $("#modal").hidden = true;
+        await afterAuth();
+      } catch (err) { $("#org-error").textContent = err.message; }
+    };
+  }
+
+  async function showTeam() {
+    const me = state.me;
+    const admin = ["admin", "owner"].includes(me.role);
+    const owner = me.role === "owner";
+    const t = await api("/api/org/members");
+    const roles = ["viewer", "member", "admin", "owner"];
+    const owners = t.members.filter((m) => m.role === "owner").length;
+    modal.open(`
+      <h2>${esc(me.org.name)}</h2><div class="muted small">You are ${esc(me.role)}.</div>
+      <h3>Members</h3>
+      <table>${t.members.map((m) => `<tr><td>${esc(m.name || m.email)}<div class="muted small">${esc(m.email)}</div></td>
+        <td>${owner ? `<select data-role="${m.user_id}">${roles.map((r) => `<option ${r === m.role ? "selected" : ""}>${r}</option>`).join("")}</select>` : esc(m.role)}</td>
+        <td>${(admin || m.user_id === me.user.id) && !(m.role === "owner" && owners === 1) ? `<button class="linklike" data-remove="${m.user_id}">${m.user_id === me.user.id ? "Leave" : "Remove"}</button>` : ""}</td></tr>`).join("")}</table>
+      ${t.pending_invites.length ? `<h3>Pending invites</h3><table>${t.pending_invites.map((i) => `<tr><td>${esc(i.email)}</td><td>${esc(i.role)}</td><td>${admin ? `<button class="linklike" data-revoke="${i.id}">Revoke</button>` : ""}</td></tr>`).join("")}</table>` : ""}
+      ${admin ? `<h3>Invite someone</h3><form id="invite-form"><div class="row2"><label>E-mail <input name="email" type="email" required /></label>
+        <label>Role <select name="role">${roles.filter((r) => owner || r !== "owner").map((r) => `<option ${r === "member" ? "selected" : ""}>${r}</option>`).join("")}</select></label></div>
+        <div class="error" id="invite-error"></div><button class="btn primary">Create invite</button></form><div id="invite-result"></div>` : ""}`);
+    $("#modal-body").onchange = async (e) => {
+      const uid = e.target.dataset.role;
+      if (!uid) return;
+      try { await api(`/api/org/members/${uid}`, { method: "PATCH", body: JSON.stringify({ role: e.target.value }) }); toast("Role updated"); } catch (err) { toast(err.message); showTeam(); }
+    };
+    $("#modal-body").onclick = async (e) => {
+      const rm = e.target.dataset.remove, rv = e.target.dataset.revoke;
+      try {
+        if (rm && confirm("Remove this member?")) { await api(`/api/org/members/${rm}`, { method: "DELETE" }); if (+rm === me.user.id) { store.set("fa_org", null); $("#modal").hidden = true; return afterAuth(); } showTeam(); }
+        if (rv) { await api(`/api/org/invites/${rv}`, { method: "DELETE" }); showTeam(); }
+      } catch (err) { toast(err.message); }
+    };
+    $("#invite-form")?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try {
+        const r = await api("/api/org/invites", { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(e.target))) });
+        $("#invite-result").innerHTML = `<p class="small">${r.emailed ? "Invite e-mailed. You can also share this link:" : "Share this link (valid 14 days):"}</p><div class="secret">${esc(r.invite_url)}</div>`;
+        e.target.reset();
+      } catch (err) { $("#invite-error").textContent = err.message; }
+    });
+  }
+
+  async function showKeys() {
+    const keys = await api("/api/keys");
+    modal.open(`
+      <h2>API keys</h2><div class="muted small">Use with <span class="mono">Authorization: Bearer &lt;key&gt;</span> and optionally <span class="mono">X-Org-Id</span>. Keys act with your permissions.</div>
+      <table>${keys.map((k) => `<tr><td>${esc(k.name)}<div class="muted small mono">${esc(k.prefix)}…</div></td><td class="small muted">${k.last_used_at ? "used " + timeAgo(new Date(k.last_used_at)) : "never used"}</td><td><button class="linklike" data-del="${k.id}">Revoke</button></td></tr>`).join("") || `<tr><td class="muted small">No keys yet.</td></tr>`}</table>
+      <form id="key-form"><label>Name <input name="name" required placeholder="e.g. dispatch integration" /></label><button class="btn primary">Create key</button></form><div id="key-result"></div>`);
+    $("#modal-body").onclick = async (e) => { if (e.target.dataset.del && confirm("Revoke this key?")) { await api(`/api/keys/${e.target.dataset.del}`, { method: "DELETE" }); showKeys(); } };
+    $("#key-form").onsubmit = async (e) => {
+      e.preventDefault();
+      const r = await api("/api/keys", { method: "POST", body: JSON.stringify({ name: new FormData(e.target).get("name") }) });
+      $("#key-result").innerHTML = `<p class="small">${esc(r.note)}</p><div class="secret">${esc(r.key)}</div>`;
+    };
+  }
+
+  async function handleInviteLink() {
+    const m = location.hash.match(/invite=([\w-]+)/);
+    if (!m) return false;
+    try {
+      const info = await api(`/api/invites/${m[1]}`);
+      const invite = { ...info, token: m[1] };
+      if (state.me.authenticated) {
+        await api(`/api/invites/${m[1]}/accept`, { method: "POST" });
+        history.replaceState(null, "", location.pathname);
+        toast(`Joined ${info.org_name}`);
+        await afterAuth();
+      } else showAuth("register", invite);
+    } catch (err) {
+      toast(err.message);
+    }
+    return true;
+  }
+
   async function boot() {
+    await loadMe();
+    const invited = await handleInviteLink();
+    if (state.me.auth_required && !state.me.authenticated) {
+      if (!invited) showAuth("login");
+      return;
+    }
     state.fuels = await api("/api/fuels").catch(() => []);
     await refreshData();
     loadAois().catch(() => {});
-    setInterval(refreshData, 120000);
+    state.timer = setInterval(refreshData, 120000);
   }
 })();

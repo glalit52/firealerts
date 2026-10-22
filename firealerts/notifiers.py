@@ -39,11 +39,15 @@ async def send_telegram(client: httpx.AsyncClient, token: str, chat_id: str, pay
 
 
 def _send_email_sync(cfg: Settings, to: str, payload: dict) -> None:
+    send_plain_email(cfg, to, f"Fire alert: {payload['count']} detection(s) near {payload['aoi_name']}", render_text(payload))
+
+
+def send_plain_email(cfg: Settings, to: str, subject: str, body: str) -> None:
     msg = EmailMessage()
-    msg["Subject"] = f"Fire alert: {payload['count']} detection(s) near {payload['aoi_name']}"
+    msg["Subject"] = subject
     msg["From"] = cfg.smtp_from
     msg["To"] = to
-    msg.set_content(render_text(payload))
+    msg.set_content(body)
     with smtplib.SMTP(cfg.smtp_host, cfg.smtp_port, timeout=30) as s:
         s.starttls()
         if cfg.smtp_user:

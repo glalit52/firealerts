@@ -35,6 +35,7 @@
         <button data-v="sat">Satellite</button>
       </div>
       <button id="refresh" class="icon-btn" title="Fetch new satellite data now">↻</button>
+      <div class="account" id="account"></div>
     </div>
   </header>
 
@@ -55,12 +56,17 @@
     </section>
 
     <section class="tab" id="tab-danger">
-      <p class="muted small">Canadian Fire Weather Index computed from 45 days of observed weather plus a 7-day forecast. Click anywhere on the map for a point outlook.</p>
-      <button id="danger-load" class="btn primary">Show danger for current view</button>
+      <div class="seg wide" id="risk-kind">
+        <button data-v="fwi" class="on">Fire danger (FWI)</button>
+        <button data-v="ignition">Ignition probability</button>
+      </div>
+      <p class="muted small" id="risk-help">Canadian Fire Weather Index computed from 45 days of observed weather plus a 7-day forecast. Click anywhere on the map for a point outlook.</p>
+      <button id="danger-load" class="btn primary">Show for current view</button>
       <div id="danger-controls" hidden>
         <label class="ctl">Day <input type="range" id="danger-day" min="0" max="7" value="1" /></label>
         <div id="danger-date" class="mono"></div>
         <div class="legend" id="danger-legend"></div>
+        <div class="note" id="model-info" hidden></div>
         <label class="check"><input type="checkbox" id="danger-visible" checked /> Show layer</label>
       </div>
       <div id="point-danger"></div>
@@ -112,6 +118,13 @@
   </aside>
 
   <div id="toast" class="toast" hidden></div>
+
+  <div class="modal" id="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true">
+      <button class="close" id="modal-close" aria-label="Close">×</button>
+      <div id="modal-body"></div>
+    </div>
+  </div>
 
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <script src="/static/app.js"></script>

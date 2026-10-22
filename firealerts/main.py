@@ -16,10 +16,11 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from . import __version__, ingest
+from . import __version__, auth, forecasting, ingest
 from .config import settings
 from .db import Alert, AreaOfInterest, Detection, IngestRun, SessionLocal, init_db, utcnow
 from .geo import bbox_contains, circle_ring
+from .ml import model, risk
 from .science import spread
 from .science.cluster import Hotspot, cluster
 from .sources import weather
@@ -64,6 +65,8 @@ async def _scheduler():
 async def lifespan(app: FastAPI):
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     init_db()
+    with SessionLocal() as s:
+        auth.bootstrap(s)
     state.client = httpx.AsyncClient(timeout=settings.http_timeout, follow_redirects=True, headers={"User-Agent": f"firealerts/{__version__}"})
     if settings.scheduler_enabled:
         state.task = asyncio.create_task(_scheduler())
@@ -74,6 +77,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Firealerts", version=__version__, lifespan=lifespan)
+app.include_router(auth.router)
+VIEWER = [Depends(auth.require("viewer"))]
 
 
 def _weather_mode() -> str:
@@ -139,7 +144,7 @@ def status(session: Session = Depends(get_session)):
     }
 
 
-@app.post("/api/ingest")
+@app.post("/api/ingest", dependencies=[Depends(auth.require("admin"))])
 async def trigger_ingest():
     rec = await run_ingest()
     return rec.as_dict()
@@ -148,7 +153,7 @@ async def trigger_ingest():
 # ----------------------------------------------------------------------------- detections & incidents
 
 
-@app.get("/api/detections")
+@app.get("/api/detections", dependencies=VIEWER)
 def detections(
     bbox: str | None = None,
     hours: float = Query(24, gt=0, le=168),
@@ -159,7 +164,7 @@ def detections(
     return {"type": "FeatureCollection", "features": [r.as_feature() for r in rows]}
 
 
-@app.get("/api/incidents")
+@app.get("/api/incidents", dependencies=VIEWER)
 def incidents(
     bbox: str | None = None,
     hours: float = Query(24, gt=0, le=168),
@@ -174,7 +179,7 @@ def incidents(
     return {"count": len(items), "incidents": items[:limit]}
 
 
-@app.get("/api/incidents/{incident_id}")
+@app.get("/api/incidents/{incident_id}", dependencies=VIEWER)
 def incident(incident_id: str, hours: float = Query(24, gt=0, le=168), session: Session = Depends(get_session)):
     incs, summaries = _incidents(session, hours)
     if incident_id not in incs:
@@ -195,45 +200,23 @@ def incident(incident_id: str, hours: float = Query(24, gt=0, le=168), session: 
     }
 
 
-def _fuel(code: str, lat: float) -> str:
-    code = spread.auto_fuel(lat) if code == "auto" else code
-    if code not in spread.FUELS:
-        raise HTTPException(400, f"unknown fuel type {code}; options: {', '.join(spread.FUELS)}")
-    return code
-
-
-async def _spread(points, lat, lon, fuel, curing, hours, members):
+async def _spread(points, lat, lon, fuel, curing, hours, members, model="auto"):
     try:
-        fw = await weather.fire_weather(state.client, lat, lon, _weather_mode())
-    except Exception as exc:
-        raise HTTPException(502, f"weather unavailable: {exc}")
-    horizons = [h for h in (1, 3, 6, 12, 24, 48, 72) if h <= hours]
-    inp = spread.SpreadInputs(
-        seed_points=points,
-        weather=fw["hourly"],
-        fwi_state=fw["state"],
-        fuel_code=_fuel(fuel, lat),
-        curing_pct=curing,
-        horizons=horizons,
-        members=members,
-    )
-    try:
-        result = await asyncio.to_thread(spread.forecast, inp)
-    except ValueError as exc:
-        raise HTTPException(422, str(exc))
-    result["weather_source"] = fw["source"]
-    result["danger"] = fw["days"]
-    result["current"] = fw["current"]
-    return result
+        return await forecasting.run_spread(
+            state.client, points, lat, lon, fuel, curing, hours, members, model, _weather_mode(), settings.terrain_enabled
+        )
+    except forecasting.ForecastError as exc:
+        raise HTTPException(exc.status, str(exc))
 
 
-@app.get("/api/incidents/{incident_id}/forecast")
+@app.get("/api/incidents/{incident_id}/forecast", dependencies=VIEWER)
 async def incident_forecast(
     incident_id: str,
     fuel: str = "auto",
     curing: float = Query(85, ge=0, le=100),
     hours: int = Query(24, ge=1, le=72),
-    members: int = Query(32, ge=1, le=100),
+    members: int = Query(16, ge=1, le=100),
+    model: str = "auto",
     session: Session = Depends(get_session),
 ):
     incs, summaries = _incidents(session, 24)
@@ -243,28 +226,29 @@ async def incident_forecast(
     front = inc.active_front()
     points = [(d.lon, d.lat, d.pixel_m) for d in front]
     s = summaries[incident_id]
-    result = await _spread(points, s["lat"], s["lon"], fuel, curing, hours, members)
+    result = await _spread(points, s["lat"], s["lon"], fuel, curing, hours, members, model)
     result["incident"] = s
     return result
 
 
-@app.get("/api/forecast/spread")
+@app.get("/api/forecast/spread", dependencies=VIEWER)
 async def point_forecast(
     lat: float = Query(ge=-90, le=90),
     lon: float = Query(ge=-180, le=180),
     fuel: str = "auto",
     curing: float = Query(85, ge=0, le=100),
     hours: int = Query(24, ge=1, le=72),
-    members: int = Query(32, ge=1, le=100),
+    members: int = Query(16, ge=1, le=100),
+    model: str = "auto",
 ):
     """What-if: spread forecast for a hypothetical ignition at a point."""
-    return await _spread([(lon, lat, 100.0)], lat, lon, fuel, curing, hours, members)
+    return await _spread([(lon, lat, 100.0)], lat, lon, fuel, curing, hours, members, model)
 
 
 # ----------------------------------------------------------------------------- fire danger
 
 
-@app.get("/api/danger")
+@app.get("/api/danger", dependencies=VIEWER)
 async def danger(lat: float = Query(ge=-90, le=90), lon: float = Query(ge=-180, le=180)):
     try:
         fw = await weather.fire_weather(state.client, lat, lon, _weather_mode())
@@ -282,7 +266,7 @@ async def danger(lat: float = Query(ge=-90, le=90), lon: float = Query(ge=-180, 
     }
 
 
-@app.get("/api/danger/grid")
+@app.get("/api/danger/grid", dependencies=VIEWER)
 async def danger_grid(bbox: str, n: int = Query(8, ge=2, le=12)):
     box = _parse_bbox(bbox)
     w, s, e, nn = box
@@ -294,7 +278,31 @@ async def danger_grid(bbox: str, n: int = Query(8, ge=2, le=12)):
         raise HTTPException(502, f"weather unavailable: {exc}")
 
 
-@app.get("/api/fuels")
+@app.get("/api/risk/ignition", dependencies=VIEWER)
+async def ignition_risk(bbox: str, n: int = Query(8, ge=2, le=12), session: Session = Depends(get_session)):
+    """Probability of at least one satellite fire detection per cell, today and for the next 7 days."""
+    box = _parse_bbox(bbox)
+    w, s, e, nn = box
+    if e - w > 60 or nn - s > 40:
+        raise HTTPException(400, "area too large; zoom in (max 60° x 40°)")
+    since = utcnow() - timedelta(days=7)
+
+    def recent(w_, s_, e_, n_):
+        q = select(func.count()).where(Detection.acq_time >= since, Detection.lon.between(w_, e_), Detection.lat.between(s_, n_))
+        return session.scalar(q) or 0
+
+    try:
+        return await risk.ignition_grid(state.client, box, n, _weather_mode(), settings.model_path, recent)
+    except Exception as exc:
+        raise HTTPException(502, f"risk model unavailable: {exc}")
+
+
+@app.get("/api/risk/model", dependencies=VIEWER)
+def risk_model():
+    return model.load(settings.model_path).meta
+
+
+@app.get("/api/fuels", dependencies=VIEWER)
 def fuels():
     return [{"code": f.code, "name": f.name} for f in spread.FUELS.values()]
 
@@ -333,14 +341,23 @@ class AOIIn(BaseModel):
         raise HTTPException(400, "provide a GeoJSON polygon or center + radius_km")
 
 
+def _own_aoi(session: Session, aoi_id: int, p: auth.Principal) -> AreaOfInterest:
+    aoi = session.get(AreaOfInterest, aoi_id)
+    if not aoi or aoi.org_id != p.org_id:
+        raise HTTPException(404, "not found")
+    return aoi
+
+
 @app.get("/api/aois")
-def list_aois(session: Session = Depends(get_session)):
-    return [a.as_dict() for a in session.scalars(select(AreaOfInterest).order_by(AreaOfInterest.id))]
+def list_aois(session: Session = Depends(get_session), p: auth.Principal = Depends(auth.require("viewer"))):
+    q = select(AreaOfInterest).where(AreaOfInterest.org_id == p.org_id).order_by(AreaOfInterest.id)
+    return [a.as_dict() for a in session.scalars(q)]
 
 
 @app.post("/api/aois", status_code=201)
-def create_aoi(body: AOIIn, session: Session = Depends(get_session)):
+def create_aoi(body: AOIIn, session: Session = Depends(get_session), p: auth.Principal = Depends(auth.require("member"))):
     aoi = AreaOfInterest(
+        org_id=p.org_id,
         name=body.name,
         geometry=body.polygon(),
         buffer_km=body.buffer_km,
@@ -355,28 +372,25 @@ def create_aoi(body: AOIIn, session: Session = Depends(get_session)):
 
 
 @app.delete("/api/aois/{aoi_id}", status_code=204)
-def delete_aoi(aoi_id: int, session: Session = Depends(get_session)):
-    aoi = session.get(AreaOfInterest, aoi_id)
-    if not aoi:
-        raise HTTPException(404, "not found")
+def delete_aoi(aoi_id: int, session: Session = Depends(get_session), p: auth.Principal = Depends(auth.require("member"))):
+    aoi = _own_aoi(session, aoi_id, p)
     session.delete(aoi)
     session.commit()
 
 
 @app.get("/api/aois/{aoi_id}/detections")
-def aoi_detections(aoi_id: int, hours: float = Query(24, gt=0, le=168), session: Session = Depends(get_session)):
+def aoi_detections(aoi_id: int, hours: float = Query(24, gt=0, le=168), session: Session = Depends(get_session), p: auth.Principal = Depends(auth.require("viewer"))):
     from .alerts import match
 
-    aoi = session.get(AreaOfInterest, aoi_id)
-    if not aoi:
-        raise HTTPException(404, "not found")
+    aoi = _own_aoi(session, aoi_id, p)
     hits = match(aoi, _query_detections(session, hours))
     return {"count": len(hits), "features": [dict(d.as_feature(), properties={**d.as_feature()["properties"], "distance_km": round(km, 2)}) for d, km in hits]}
 
 
 @app.get("/api/alerts")
-def list_alerts(limit: int = Query(100, ge=1, le=1000), session: Session = Depends(get_session)):
-    return [a.as_dict() for a in session.scalars(select(Alert).order_by(Alert.id.desc()).limit(limit))]
+def list_alerts(limit: int = Query(100, ge=1, le=1000), session: Session = Depends(get_session), p: auth.Principal = Depends(auth.require("viewer"))):
+    q = select(Alert).where(Alert.org_id == p.org_id).order_by(Alert.id.desc()).limit(limit)
+    return [a.as_dict() for a in session.scalars(q)]
 
 
 # ----------------------------------------------------------------------------- web app

@@ -87,6 +87,7 @@ def fixed_grid_to_latlon(x: np.ndarray, y: np.ndarray, proj: dict) -> tuple[np.n
         s_z = rs * cx * sy
         lat = np.degrees(np.arctan((r_eq**2 / r_pol**2) * s_z / np.sqrt((h - s_x) ** 2 + s_y**2)))
         lon = np.degrees(lon0 - np.arctan(s_y / (h - s_x)))
+    lon = (lon + 180.0) % 360.0 - 180.0  # GOES-West sees across the antimeridian
     lat[disc < 0] = np.nan
     lon[disc < 0] = np.nan
     return lat, lon

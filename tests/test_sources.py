@@ -50,6 +50,13 @@ def test_goes_fixed_grid_nadir_and_off_disk():
     assert math.isnan(lat[1])  # outside the Earth disk
 
 
+def test_goes_west_longitudes_wrap_across_antimeridian():
+    west = dict(PROJ, longitude_of_projection_origin=-137.0)
+    # A scan angle far to the west of GOES-West lands near Fiji (~178 E), not at -182.
+    lat, lon = goes.fixed_grid_to_latlon(np.array([-0.12]), np.array([-0.04]), west)
+    assert -180 <= lon[0] <= 180 and lon[0] > 150
+
+
 def test_goes_scan_start_from_key():
     t = goes.scan_start("ABI-L2-FDCF/2026/295/13/OR_ABI-L2-FDCF-M6_G19_s20262951300205_e2026_c2026.nc")
     assert (t.year, t.month, t.day, t.hour, t.minute) == (2026, 10, 22, 13, 0)

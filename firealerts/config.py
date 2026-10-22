@@ -43,6 +43,24 @@ class Settings:
     )
     goes_enabled: bool = field(default_factory=lambda: _bool("GOES_ENABLED", True))
 
+    # Himawari-9 (JAXA P-Tree WLF) and Meteosat (LSA SAF FRP-PIXEL) need free registrations.
+    jaxa_ftp_user: str = field(default_factory=lambda: os.getenv("JAXA_FTP_USER", ""))
+    jaxa_ftp_password: str = field(default_factory=lambda: os.getenv("JAXA_FTP_PASSWORD", ""))
+    himawari_dir: str = field(default_factory=lambda: os.getenv("HIMAWARI_FTP_DIR", "/pub/himawari/L2/WLF/010/{yyyymm}/{dd}/{hh}/"))
+    lsasaf_user: str = field(default_factory=lambda: os.getenv("LSASAF_USER", ""))
+    lsasaf_password: str = field(default_factory=lambda: os.getenv("LSASAF_PASSWORD", ""))
+    lsasaf_url: str = field(default_factory=lambda: os.getenv("LSASAF_URL", "https://datalsasaf.lsasvcs.ipma.pt/PRODUCTS/MSG/FRP-PIXEL/HDF5/{yyyy}/{mm}/{dd}/"))
+
+    # Terrain-aware spread (AWS Terrain Tiles + ESA WorldCover)
+    terrain_enabled: bool = field(default_factory=lambda: _bool("TERRAIN_ENABLED", True))
+
+    # Accounts. AUTH_REQUIRED=false keeps single-user self-hosting login-free.
+    auth_required: bool = field(default_factory=lambda: _bool("AUTH_REQUIRED", False))
+    registration_open: bool = field(default_factory=lambda: _bool("REGISTRATION_OPEN", True))
+
+    # Ignition-risk model (train with: python -m firealerts.ml.train)
+    model_path: str = field(default_factory=lambda: os.getenv("MODEL_PATH", "./data/ignition_model.joblib"))
+
     # Notifications
     alert_webhook_url: str = field(default_factory=lambda: os.getenv("ALERT_WEBHOOK_URL", ""))
     telegram_bot_token: str = field(default_factory=lambda: os.getenv("TELEGRAM_BOT_TOKEN", ""))

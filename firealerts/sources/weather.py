@@ -197,10 +197,10 @@ async def fire_weather(client: httpx.AsyncClient, lat: float, lon: float, mode: 
     return result
 
 
-async def danger_grid(client: httpx.AsyncClient, bbox: tuple[float, float, float, float], n: int = 8, mode: str = "auto") -> dict:
-    """FWI forecast on an n×n grid of cells covering the bbox (one batched weather request)."""
+async def grid_series(client: httpx.AsyncClient, bbox: tuple[float, float, float, float], n: int = 8, mode: str = "auto") -> dict:
+    """Daily FWI series (today + 7-day forecast) for the centres of an n×n grid (one batched request)."""
     w, s, e, nn = bbox
-    key = ("grid", round(w, 1), round(s, 1), round(e, 1), round(nn, 1), n, mode)
+    key = ("gridseries", round(w, 2), round(s, 2), round(e, 2), round(nn, 2), n, mode)
     cached = _cache_get(key)
     if cached:
         return cached
@@ -217,24 +217,31 @@ async def danger_grid(client: httpx.AsyncClient, bbox: tuple[float, float, float
             log.warning("Open-Meteo grid unavailable (%s); using synthetic weather", exc)
     if wxs is None:
         wxs, source = [synthetic_hours(la, lo, past_days=45) for la, lo in centres], "demo"
-    cells = []
-    dates: list[str] = []
-    for (la, lo), wx in zip(centres, wxs):
-        res = compute(la, wx)
-        fc = [d for d in res["days"] if d["forecast"]]
-        today = [d for d in res["days"] if not d["forecast"]][-1:]
-        series = today + fc
-        dates = dates or [d["date"] for d in series]
-        cells.append(
-            {
-                "type": "Feature",
-                "properties": {"fwi": [d["fwi"] for d in series], "danger": [d["danger"] for d in series]},
-                "geometry": {
-                    "type": "Polygon",
-                    "coordinates": [[[lo - dx / 2, la - dy / 2], [lo + dx / 2, la - dy / 2], [lo + dx / 2, la + dy / 2], [lo - dx / 2, la + dy / 2], [lo - dx / 2, la - dy / 2]]],
-                },
-            }
-        )
-    out = {"type": "FeatureCollection", "features": cells, "dates": dates, "source": source}
+    series = []
+    for (la, _), wx in zip(centres, wxs):
+        days = compute(la, wx)["days"]
+        series.append([d for d in days if not d["forecast"]][-1:] + [d for d in days if d["forecast"]])
+    out = {"centres": centres, "dx": dx, "dy": dy, "series": series, "dates": [d["date"] for d in series[0]], "source": source}
     _cache_put(key, out)
     return out
+
+
+def cell_polygon(lat: float, lon: float, dx: float, dy: float) -> dict:
+    return {
+        "type": "Polygon",
+        "coordinates": [[[lon - dx / 2, lat - dy / 2], [lon + dx / 2, lat - dy / 2], [lon + dx / 2, lat + dy / 2], [lon - dx / 2, lat + dy / 2], [lon - dx / 2, lat - dy / 2]]],
+    }
+
+
+async def danger_grid(client: httpx.AsyncClient, bbox: tuple[float, float, float, float], n: int = 8, mode: str = "auto") -> dict:
+    """FWI forecast on an n×n grid of cells covering the bbox."""
+    g = await grid_series(client, bbox, n, mode)
+    cells = [
+        {
+            "type": "Feature",
+            "properties": {"fwi": [d["fwi"] for d in ser], "danger": [d["danger"] for d in ser]},
+            "geometry": cell_polygon(la, lo, g["dx"], g["dy"]),
+        }
+        for (la, lo), ser in zip(g["centres"], g["series"])
+    ]
+    return {"type": "FeatureCollection", "features": cells, "dates": g["dates"], "source": g["source"]}

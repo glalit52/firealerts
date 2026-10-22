@@ -1,8 +1,8 @@
 """Deterministic synthetic fire activity so the platform runs without network access.
 
 Fires grow as wind-driven ellipses and are "observed" at realistic satellite
-overpass times (VIIRS/MODIS twice a day, GOES every 20 minutes over the
-Americas). Output is stable across calls, so re-ingesting does not duplicate.
+overpass times (VIIRS/MODIS twice a day; GOES, Meteosat or Himawari every
+20 minutes depending on longitude). Output is stable across calls, so re-ingesting does not duplicate.
 """
 
 from __future__ import annotations
@@ -94,10 +94,17 @@ def generate(now: datetime | None = None, lookback_h: int = 24) -> list[dict]:
                     t = day0 + timedelta(days=d, hours=(lh - tz))
                     t = t.replace(second=0, microsecond=0)
                     times.append((src, sat, t, px))
+        geo = None
         if -140 <= lon <= -30:
+            geo = ("GOES19" if lon > -105 else "GOES18", "G", 2000.0)
+        elif -25 <= lon <= 60:
+            geo = ("METEOSAT", "MSG", 3000.0)
+        elif 85 <= lon <= 180:
+            geo = ("HIMAWARI9", "H09", 2000.0)
+        if geo:
             t = start.replace(minute=(start.minute // 20) * 20, second=0, microsecond=0)
             while t <= now:
-                times.append(("GOES19" if lon > -105 else "GOES18", "G", t, 2000.0))
+                times.append((geo[0], geo[1], t, geo[2]))
                 t += timedelta(minutes=20)
 
         for src, sat, t, px in times:
@@ -110,7 +117,7 @@ def generate(now: datetime | None = None, lookback_h: int = 24) -> list[dict]:
             vigor = math.sin(math.pi * min(age / LIFE_H, 1)) ** 0.6
             head = speed * age * (0.8 + 0.4 * diurnal)
             n = max(1, int((4 + head * 3) * vigor * diurnal * (375 / px) ** 0.5 * prng.uniform(0.7, 1.3)))
-            if src.startswith("GOES"):
+            if px >= 2000:
                 n = max(1, min(n, 3))
             pts = _front_points(prng, lat, lon, heading, head + 0.3, 0.12 * head + 0.2, 0.35 * head + 0.3, n)
             daynight = "D" if 6 <= local_h <= 18 else "N"

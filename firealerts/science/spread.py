@@ -60,6 +60,29 @@ FUELS: dict[str, Fuel] = {
 }
 
 
+# ESA WorldCover class -> FBP fuel (None = non-fuel). A pragmatic, latitude-aware mapping;
+# a national fuel map should replace it where one exists.
+def fuel_for_landcover(lc_class: int, lat: float) -> str | None:
+    alat = abs(lat)
+    if lc_class == 10:  # tree cover
+        return "C2" if alat >= 50 else ("C7" if alat >= 28 else "D1")
+    if lc_class == 20:  # shrubland: slash-like fine fuel load, used as a shrub proxy
+        return "S1"
+    if lc_class in (30, 90, 100):  # grassland, herbaceous wetland, moss/lichen
+        return "O1b" if lc_class == 30 else "O1a"
+    if lc_class == 40:  # cropland
+        return "O1a"
+    if lc_class == 95:  # mangroves
+        return "D1"
+    return None  # built-up, bare, snow, water
+
+
+def slope_factor(slope_pct):
+    """FBP spread factor for ground slope (capped at 60 %, Forestry Canada 1992 eq. 39)."""
+    gs = np.minimum(np.asarray(slope_pct, dtype=float), 60.0)
+    return np.exp(3.533 * (gs / 100.0) ** 1.2)
+
+
 def auto_fuel(lat: float) -> str:
     """Crude default when no land-cover information is available."""
     return "C2" if abs(lat) >= 50 else "O1b"

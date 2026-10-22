@@ -53,6 +53,7 @@ async def process(session: Session, client: httpx.AsyncClient, cfg: Settings, ne
         nearest = min(hits, key=lambda h: h[1])
         frps = [d.frp for d, _ in hits if d.frp is not None]
         alert = Alert(
+            org_id=aoi.org_id,
             aoi_id=aoi.id,
             aoi_name=aoi.name,
             detection_ids=[d.id for d, _ in hits],
