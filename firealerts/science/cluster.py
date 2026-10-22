@@ -7,8 +7,15 @@ import math
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
 from ..geo import LocalProjection, convex_hull, haversine_km, polygon_area
+
+if TYPE_CHECKING:
+    from ..sources.static_sources import StaticIndex
+
+# Volcanoes, gas flares and persistent hotspots keep their place in the list but sink to the bottom.
+STATIC_PRIORITY_FACTOR = 0.1
 
 
 @dataclass
@@ -47,7 +54,7 @@ class Incident:
         fine = [d for d in recent if d.pixel_m < 2000]
         return fine or recent
 
-    def summary(self, now: datetime | None = None) -> dict:
+    def summary(self, now: datetime | None = None, statics: StaticIndex | None = None) -> dict:
         now = now or datetime.now(timezone.utc)
         dets = self.detections
         lat = sum(d.lat for d in dets) / len(dets)
@@ -75,6 +82,9 @@ class Incident:
             + 20 * min(1.0, len(dets) / 30)
             + 15 * growth
         )
+        static = statics.match(lat, lon) if statics else None
+        if static:
+            score *= STATIC_PRIORITY_FACTOR
         return {
             "id": self.id,
             "lat": round(lat, 5),
@@ -91,6 +101,7 @@ class Incident:
             "recent_6h": len(recent),
             "priority": round(score),
             "status": "active" if age_h <= 12 else "cooling",
+            "static_source": {"type": static[0].type, "name": static[0].name, "distance_km": round(static[1], 2)} if static else None,
             "hull": {"type": "Polygon", "coordinates": [ring]} if len(ring) >= 4 else None,
         }
 

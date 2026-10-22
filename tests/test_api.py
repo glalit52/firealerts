@@ -20,6 +20,7 @@ def test_aoi_alert_flow_and_incident_forecast(client):
     target = fresh[0]
     r = client.post("/api/aois", json={"name": "Ranch", "center": [target["lat"], target["lon"]], "radius_km": 5, "min_confidence": "l"})
     assert r.status_code == 201, r.text
+    assert r.json()["include_static"] is False
 
     run = client.post("/api/ingest").json()
     assert run["mode"] == "demo" and run["inserted"] > 100 and run["alerts"] >= 1
@@ -35,9 +36,11 @@ def test_aoi_alert_flow_and_incident_forecast(client):
 
     fc = client.get("/api/detections?hours=24&bbox=-180,-90,180,90").json()
     assert fc["features"] and fc["features"][0]["geometry"]["type"] == "Point"
+    assert "static" in fc["features"][0]["properties"]
 
     incs = client.get("/api/incidents?min_count=5").json()["incidents"]
     assert incs and incs[0]["priority"] >= incs[-1]["priority"]
+    assert all("static_source" in i for i in incs)
 
     detail = client.get(f"/api/incidents/{incs[0]['id']}").json()
     assert detail["detections"] and detail["timeline"]

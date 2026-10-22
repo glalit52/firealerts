@@ -10,6 +10,7 @@ Firealerts pulls active-fire detections from polar-orbiting and geostationary sa
 |---|---|
 | **Detection, global and multi-sensor** | NASA FIRMS VIIRS (NOAA-20, NOAA-21, S-NPP · 375 m) and MODIS (1 km). Geostationary coverage every 10–15 minutes from **GOES-East/West** (Americas, read from NOAA's public AWS buckets), **Himawari-9** (Asia/Oceania, JAXA P-Tree) and **Meteosat** (Europe/Africa, EUMETSAT LSA SAF FRP-PIXEL). |
 | **Incidents** | Hotspots are grouped into incidents with single-linkage clustering (2.5 km). Each has a footprint, area, FRP, per-sensor provenance and a 0–100 **priority score**. |
+| **Static heat sources** | Incidents within 5 km of a Smithsonian GVP Holocene volcano, or within 2 km of a VIIRS Nightfire / World Bank GGFR gas flare or a learned persistent hotspot, are tagged `static_source`. A learned hotspot is a ~400 m cell with detections on most days of the last 30. Tagged incidents get 10 % of their priority, and area alerts skip them unless the area sets `include_static`. The web console hides them by default. |
 | **Fire danger forecast** | The full **Canadian Forest Fire Weather Index System** (FFMC, DMC, DC, ISI, BUI, FWI), spun up over 45–60 days of observed weather and run 7 days ahead with Open-Meteo. It has hemisphere-correct day-length factors and EFFIS danger classes. |
 | **Ignition-risk model** | Gradient-boosted trees with isotonic calibration predict P(fire detection in a cell on a day) for today and 7 days ahead. Features: FWI components, weather, WorldCover land-cover fractions, terrain, season and recent nearby fire activity. Training uses the **FIRMS archive × Open-Meteo historical weather** with a time-ordered train/test split. A transparent FWI baseline is used until you train a model. |
 | **Terrain-aware spread** | Each grid cell carries an FBP fuel type derived from **ESA WorldCover 10 m** and slope and aspect from **AWS Terrain Tiles**. The FBP slope effect is converted to an equivalent wind and added vectorially to the forecast wind. Water, built-up and bare ground act as barriers. Arrival time comes from an **ordered-upwind minimum-travel-time solver** (numba) driven by the hourly wind, humidity and hourly FFMC. |
@@ -56,6 +57,7 @@ All settings are environment variables (see [`.env.example`](.env.example)):
 - `JAXA_FTP_USER`/`JAXA_FTP_PASSWORD`: Himawari-9 wildfire product (free [P-Tree account](https://www.eorc.jaxa.jp/ptree/registration_top.html)).
 - `LSASAF_USER`/`LSASAF_PASSWORD`: Meteosat FRP-PIXEL (free [LSA SAF account](https://lsa-saf.eumetsat.int/)).
 - `TERRAIN_ENABLED`: the terrain-aware spread model (on by default).
+- `STATIC_SOURCES`, `STATIC_RADIUS_KM`, `STATIC_VOLCANO_RADIUS_KM`, `STATIC_LEARN_*`: static heat-source flagging.
 - `MODEL_PATH`: the trained ignition model.
 - `AUTH_REQUIRED`, `REGISTRATION_OPEN`: accounts and multi-tenancy.
 - `ALERT_WEBHOOK_URL`, `TELEGRAM_BOT_TOKEN`, `SMTP_*`, `PUBLIC_URL`: notifications and invite links.
@@ -91,7 +93,7 @@ firealerts/
   auth.py    accounts, organisations, roles, tokens, invites
   ingest.py · alerts.py · notifiers.py · main.py (FastAPI + scheduler + web app)
 web/         MapLibre GL console (no build step)
-tests/       65 tests: reference values, solver accuracy, parsers, auth, API flows
+tests/       71 tests: reference values, solver accuracy, parsers, auth, API flows
 ```
 
 ### Validation

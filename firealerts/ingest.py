@@ -14,7 +14,7 @@ from . import alerts
 from .config import Settings
 from .db import Detection, IngestRun, utcnow
 from .geo import bbox_contains
-from .sources import demo, firms, goes, himawari, meteosat
+from .sources import demo, firms, goes, himawari, meteosat, static_sources
 
 log = logging.getLogger(__name__)
 
@@ -72,6 +72,8 @@ async def run(session: Session, client: httpx.AsyncClient, cfg: Settings) -> Ing
     session.add_all(new)
     cutoff = utcnow() - timedelta(hours=cfg.retention_hours)
     session.execute(delete(Detection).where(Detection.acq_time < cutoff))
+    if cfg.static_sources_enabled:
+        static_sources.record(session, new, cfg.static_learn_days)
     session.commit()
 
     fresh_cutoff = utcnow() - timedelta(hours=6)  # do not alert on stale backfill

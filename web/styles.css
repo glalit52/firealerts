@@ -135,6 +135,9 @@ input[type="range"] { padding: 0; accent-color: var(--accent); width: 100%; }
 .inc-right b { color: var(--text); font-size: 13px; }
 .tag { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 4px; background: #222837; color: #b9c0d4; margin-right: 3px; }
 .tag.geo { background: rgba(255, 176, 43, 0.15); color: var(--accent-2); }
+.tag.static { background: rgba(139, 147, 167, 0.18); color: #d6dbe8; font-weight: 600; }
+.tag.static.volcano { background: rgba(196, 92, 255, 0.16); color: #d9a6ff; }
+.tag.static.flare { background: rgba(77, 182, 255, 0.15); color: #8fd0ff; }
 
 .card { background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; display: grid; gap: 10px; }
 .card h3 { margin: 0; }

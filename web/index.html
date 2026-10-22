@@ -51,6 +51,7 @@
         <input id="inc-filter" type="search" placeholder="Filter by sensor or coordinates" />
         <label class="ctl small">Min. pixels <input id="min-count" type="number" min="1" value="3" /></label>
       </div>
+      <label class="check" title="Volcanoes, gas flares and hotspots seen on most days"><input type="checkbox" id="hide-static" checked /> Hide static sources</label>
       <div id="inc-summary" class="muted small"></div>
       <ol id="incident-list" class="list"></ol>
     </section>
@@ -87,6 +88,7 @@
         <label>Min. confidence
           <select name="min_confidence"><option value="l">Low</option><option value="n" selected>Nominal</option><option value="h">High</option></select>
         </label>
+        <label class="check"><input type="checkbox" name="include_static" /> Also alert on volcanoes, gas flares &amp; persistent hotspots</label>
         <label>E-mail <input name="email" type="email" placeholder="optional" /></label>
         <label>Webhook URL <input name="webhook_url" type="url" placeholder="optional (Slack, Teams, custom)" /></label>
         <label>Telegram chat id <input name="telegram_chat_id" placeholder="optional" /></label>
