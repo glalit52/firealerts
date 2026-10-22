@@ -91,7 +91,7 @@ firealerts/
   auth.py    accounts, organisations, roles, tokens, invites
   ingest.py · alerts.py · notifiers.py · main.py (FastAPI + scheduler + web app)
 web/         MapLibre GL console (no build step)
-tests/       64 tests: reference values, solver accuracy, parsers, auth, API flows
+tests/       65 tests: reference values, solver accuracy, parsers, auth, API flows
 ```
 
 ### Validation
