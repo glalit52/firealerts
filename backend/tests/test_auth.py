@@ -135,6 +135,8 @@ def test_email_verification_can_be_required(client, required):
     try:
         reg = register(client)
         assert client.get("/api/assets", headers=bearer(reg["token"])).status_code == 403
+        resent = client.post("/api/auth/resend-verification", headers=bearer(reg["token"]))
+        assert resent.status_code == 200 and "dev_link" in resent.json()
         client.post("/api/auth/verify-email", json={"token": token_from(reg["verification"]["dev_link"])})
         assert client.get("/api/assets", headers=bearer(reg["token"])).status_code == 200
     finally:

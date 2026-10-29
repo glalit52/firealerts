@@ -141,6 +141,18 @@ def require_user(p: Principal = Depends(principal)) -> Principal:
     return p
 
 
+def unverified_user(
+    session: Session = Depends(get_session),
+    authorization: str | None = Header(default=None),
+    x_org_id: str | None = Header(default=None),
+) -> Principal:
+    """Signed-in user, without the e-mail verification gate (for verification endpoints)."""
+    p = resolve(session, authorization, x_org_id)
+    if not p or not p.user:
+        raise HTTPException(401, "sign in required")
+    return p
+
+
 def require_superuser(p: Principal = Depends(principal)) -> Principal:
     if not p.user or not p.user.is_superuser:
         raise HTTPException(403, "platform administrators only")

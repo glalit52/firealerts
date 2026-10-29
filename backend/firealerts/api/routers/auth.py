@@ -185,7 +185,7 @@ def verify_email(body: TokenIn, session: Session = Depends(get_session)):
 
 
 @router.post("/auth/resend-verification")
-async def resend_verification(request: Request, p: Principal = Depends(require_user), session: Session = Depends(get_session)):
+async def resend_verification(request: Request, p: Principal = Depends(auth.unverified_user), session: Session = Depends(get_session)):
     user = session.get(User, p.user.id)
     if user.email_verified_at:
         return {"already_verified": True}
