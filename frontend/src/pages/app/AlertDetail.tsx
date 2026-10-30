@@ -7,37 +7,39 @@ import { useAuth } from "../../auth/AuthContext";
 import { IconChevronRight, IconMap } from "../../components/Icons";
 import { useToast } from "../../components/Toast";
 import { Badge, Button, ButtonLink, Card, DangerPill, ErrorState, Loading, SeverityChip, Tile } from "../../components/ui";
-import { compass, fmtCoord, fmtDate, fmtDateTime, fmtHours, fmtKm, fmtNum, fmtPct, humanize, timeAgo } from "../../lib/format";
+import { compass, fmtCoord, fmtDateTime, fmtDayMonth, fmtHours, fmtKm, fmtNum, fmtPct, humanize, timeAgo } from "../../lib/format";
+import { tEnum, useT } from "../../i18n";
 import { useAsync, useDocumentTitle } from "../../lib/useAsync";
 import { MapView } from "../../map/MapView";
 import { addLayer, ensureSource, fitGeometry, setData } from "../../map/utils";
 
 function DataTiles({ a }: { a: AlertDetailT }) {
+  const { t } = useT();
   const d = a.data as Record<string, unknown>;
   const n = (k: string) => (d[k] == null ? null : Number(d[k]));
   if (a.type === "threat")
     return (
       <div className="grid-4">
-        <Tile label="Likely arrival" value={fmtHours(n("eta_likely_h"))} accent="#ff4d5e" foot="P50 ensemble" />
-        <Tile label="Worst case" value={fmtHours(n("eta_p90_h"))} foot="P90 ensemble" />
-        <Tile label="Distance" value={fmtKm(n("distance_km"))} foot={d.bearing_deg != null ? `bearing ${compass(n("bearing_deg"))} (${d.bearing_deg}°)` : undefined} />
-        <Tile label="Incident" value={<span className="mono" style={{ fontSize: 15 }}>{String(d.incident_id ?? "–")}</span>} />
+        <Tile label={t("alert.likely")} value={fmtHours(n("eta_likely_h"))} accent="#ff4d5e" foot={t("alert.p50")} />
+        <Tile label={t("alert.worst")} value={fmtHours(n("eta_p90_h"))} foot={t("alert.p90")} />
+        <Tile label={t("alert.distance")} value={fmtKm(n("distance_km"))} foot={d.bearing_deg != null ? t("alert.bearing", { dir: compass(n("bearing_deg")), deg: String(d.bearing_deg) }) : undefined} />
+        <Tile label={t("alert.incident")} value={<span className="mono" style={{ fontSize: 15 }}>{String(d.incident_id ?? "–")}</span>} />
       </div>
     );
   if (a.type === "risk")
     return (
       <div className="stack">
         <div className="grid-4">
-          <Tile label="Worst day" value={d.date ? fmtDate(String(d.date)).replace(/ \d{4}$/, "") : "–"} />
+          <Tile label={t("alert.worstDay")} value={d.date ? fmtDayMonth(String(d.date)) : "–"} />
           <Tile label="FWI" value={fmtNum(n("fwi"), 1)} />
-          <Tile label="Danger" value={d.danger ? <DangerPill danger={String(d.danger)} /> : "–"} />
-          <Tile label="Ignition probability" value={fmtPct(n("ignition_p"), 1)} />
+          <Tile label={t("overview.col.danger")} value={d.danger ? <DangerPill danger={String(d.danger)} /> : "–"} />
+          <Tile label={t("chart.ignition")} value={fmtPct(n("ignition_p"), 1)} />
         </div>
         {Array.isArray(d.days) && (
           <div className="row wrap" style={{ gap: 6 }}>
             {(d.days as { date: string; fwi: number; danger: string }[]).map((x) => (
               <DangerPill key={x.date} danger={x.danger}>
-                {fmtDate(x.date).slice(0, 6)} · {fmtNum(x.fwi)}
+                {fmtDayMonth(x.date)} · {fmtNum(x.fwi)}
               </DangerPill>
             ))}
           </div>
@@ -47,10 +49,10 @@ function DataTiles({ a }: { a: AlertDetailT }) {
   if (a.type === "detection")
     return (
       <div className="grid-4">
-        <Tile label="Detections" value={fmtNum(n("count"))} accent="#ff6a2b" />
-        <Tile label="Inside the asset" value={fmtNum(n("inside"))} />
-        <Tile label="Nearest" value={fmtKm(n("nearest_km"))} />
-        <Tile label="Max FRP" value={fmtNum(n("max_frp"), 1)} unit="MW" foot={Array.isArray(d.sources) ? (d.sources as string[]).join(", ") : undefined} />
+        <Tile label={t("stats.detections")} value={fmtNum(n("count"))} accent="#ff6a2b" />
+        <Tile label={t("asset.popup.inside")} value={fmtNum(n("inside"))} />
+        <Tile label={t("alert.nearest")} value={fmtKm(n("nearest_km"))} />
+        <Tile label={t("alert.maxFrp")} value={fmtNum(n("max_frp"), 1)} unit="MW" foot={Array.isArray(d.sources) ? (d.sources as string[]).join(", ") : undefined} />
       </div>
     );
   const entries = Object.entries(d).filter(([k]) => k !== "detection_ids");
@@ -71,11 +73,12 @@ export default function AlertDetail() {
   const { id } = useParams();
   const { can } = useAuth();
   const toast = useToast();
+  const { t } = useT();
   const alert = useAsync(() => alertsApi.get(Number(id)), [id]);
   const [map, setMap] = useState<MlMap | null>(null);
   const [busy, setBusy] = useState(false);
   const a = alert.data;
-  useDocumentTitle(a ? a.title : "Alert");
+  useDocumentTitle(a ? a.title : t("alert.doc"));
 
   const onReady = useCallback((m: MlMap) => {
     ensureSource(m, "asset");
@@ -109,7 +112,7 @@ export default function AlertDetail() {
       const r = await alertsApi[action](a.id);
       alert.setData({ ...a, ...r });
       window.dispatchEvent(new Event("fa:alerts-changed"));
-      toast.success(action === "ack" ? "Alert acknowledged." : action === "resolve" ? "Alert resolved." : "Alert reopened.");
+      toast.success(action === "ack" ? t("alert.acked") : action === "resolve" ? t("alert.resolved") : t("alert.reopened"));
     } catch (e) {
       toast.error(e);
     } finally {
@@ -123,13 +126,13 @@ export default function AlertDetail() {
         <ErrorState error={alert.error} onRetry={alert.reload} />
       </div>
     );
-  if (!a) return <Loading label="Loading alert" />;
+  if (!a) return <Loading label={t("alert.loading")} />;
   const incidentId = (a.data as Record<string, unknown>).incident_id;
 
   return (
     <div className="page">
       <div className="breadcrumb">
-        <Link to="/app/alerts">Alerts</Link>
+        <Link to="/app/alerts">{t("nav.alerts")}</Link>
         <IconChevronRight size={12} />
         <span>#{a.id}</span>
       </div>
@@ -137,8 +140,8 @@ export default function AlertDetail() {
         <div style={{ minWidth: 0 }}>
           <div className="row wrap">
             <SeverityChip severity={a.severity} />
-            <Badge>{humanize(a.type)}</Badge>
-            <Badge kind={a.status === "open" ? "bad" : a.status === "acknowledged" ? "info" : undefined}>{humanize(a.status)}</Badge>
+            <Badge>{tEnum("alertType", a.type)}</Badge>
+            <Badge kind={a.status === "open" ? "bad" : a.status === "acknowledged" ? "info" : undefined}>{tEnum("alertStatus", a.status)}</Badge>
           </div>
           <h1 className="mt-8">{a.title}</h1>
           <div className="small muted mt-4">
@@ -156,17 +159,17 @@ export default function AlertDetail() {
           <div className="row wrap">
             {a.status === "open" && (
               <Button variant="primary" loading={busy} onClick={() => act("ack")}>
-                Acknowledge
+                {t("alerts.ack")}
               </Button>
             )}
             {a.status !== "resolved" && (
               <Button loading={busy && a.status !== "open"} onClick={() => act("resolve")}>
-                Resolve
+                {t("alerts.resolve")}
               </Button>
             )}
             {a.status === "resolved" && (
               <Button loading={busy} onClick={() => act("reopen")}>
-                Reopen
+                {t("alerts.reopen")}
               </Button>
             )}
           </div>
@@ -175,49 +178,49 @@ export default function AlertDetail() {
 
       <div className="detail-layout">
         <div className="stack loose">
-          <Card title="Details">
+          <Card title={t("alert.details")}>
             <div className="stack">
               {a.message && <p style={{ whiteSpace: "pre-wrap", color: "var(--text-2)" }}>{a.message}</p>}
               <DataTiles a={a} />
               <div className="row wrap">
                 {typeof incidentId === "string" && (
                   <ButtonLink to={`/app/map?incident=${incidentId}`} icon={<IconMap />}>
-                    Open spread forecast
+                    {t("alert.openForecast")}
                   </ButtonLink>
                 )}
                 {a.lat != null && (
                   <ButtonLink to={`/app/map?lat=${a.lat}&lon=${a.lon}&zoom=11`} icon={<IconMap />} variant="ghost">
-                    View on live map
+                    {t("alert.viewMap")}
                   </ButtonLink>
                 )}
               </div>
             </div>
           </Card>
-          <Card title="Timeline">
+          <Card title={t("alert.timeline")}>
             <dl className="kv">
-              <dt>Created</dt>
+              <dt>{t("alert.created")}</dt>
               <dd>{fmtDateTime(a.created_at)}</dd>
-              <dt>Acknowledged</dt>
-              <dd>{a.acknowledged_at ? `${fmtDateTime(a.acknowledged_at)}${a.acknowledged_by ? ` · user #${a.acknowledged_by}` : ""}` : "–"}</dd>
-              <dt>Resolved</dt>
+              <dt>{t("alertStatus.acknowledged")}</dt>
+              <dd>{a.acknowledged_at ? `${fmtDateTime(a.acknowledged_at)}${a.acknowledged_by ? ` · ${t("alert.user", { id: a.acknowledged_by })}` : ""}` : "–"}</dd>
+              <dt>{t("alertStatus.resolved")}</dt>
               <dd>{a.resolved_at ? fmtDateTime(a.resolved_at) : "–"}</dd>
-              <dt>Last update</dt>
+              <dt>{t("alert.lastUpdate")}</dt>
               <dd>{fmtDateTime(a.updated_at)}</dd>
             </dl>
           </Card>
-          <Card title="Delivery log" sub="Notifications sent for this alert" flush>
+          <Card title={t("alert.deliveryLog")} sub={t("alert.deliverySub")} flush>
             {a.deliveries.length === 0 ? (
               <div className="card-body small muted">
-                Not delivered to any channel. Alerts below “moderate” are in-app only unless a notification rule routes them. <Link to="/app/integrations">Configure integrations →</Link>
+                {t("alert.notDelivered")} <Link to="/app/integrations">{t("alert.configure")}</Link>
               </div>
             ) : (
               <div className="table-wrap">
                 <table className="table compact">
                   <thead>
                     <tr>
-                      <th>Channel</th>
-                      <th>Status</th>
-                      <th>Time</th>
+                      <th>{t("alert.channel")}</th>
+                      <th>{t("alerts.status")}</th>
+                      <th>{t("alert.time")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -226,7 +229,7 @@ export default function AlertDetail() {
                         <td>
                           {d.name} <span className="tiny muted">{d.type}</span>
                         </td>
-                        <td>{d.status === "ok" ? <Badge kind="ok">Delivered</Badge> : <span className="small bad-text">{d.status}</span>}</td>
+                        <td>{d.status === "ok" ? <Badge kind="ok">{t("alert.deliveredBadge")}</Badge> : <span className="small bad-text">{d.status}</span>}</td>
                         <td className="small">{fmtDateTime(d.at)}</td>
                       </tr>
                     ))}
@@ -239,10 +242,10 @@ export default function AlertDetail() {
         <div className="detail-map" style={{ position: "sticky", top: 16 }}>
           {a.lat == null && !a.asset?.geometry ? (
             <div className="loading-block" style={{ height: "100%" }}>
-              No location for this alert.
+              {t("alert.noLocation")}
             </div>
           ) : (
-            <MapView onReady={onReady} center={a.lon != null && a.lat != null ? [a.lon, a.lat] : undefined} zoom={9} ariaLabel="Alert location" />
+            <MapView onReady={onReady} center={a.lon != null && a.lat != null ? [a.lon, a.lat] : undefined} zoom={9} ariaLabel={t("alert.location")} />
           )}
         </div>
       </div>

@@ -5,14 +5,16 @@ import { useAuth } from "../../auth/AuthContext";
 import { IconDownload, IconPlus, IconSearch, IconTree } from "../../components/Icons";
 import { useToast } from "../../components/Toast";
 import { Badge, Button, Card, DangerPill, EmptyState, ErrorState, Input, Loading, Segmented, Select } from "../../components/ui";
-import { fmtCompact, fmtHa, fmtNum, fmtPct, humanize } from "../../lib/format";
+import { fmtCompact, fmtHa, fmtNum, fmtPct } from "../../lib/format";
 import { useAsync, useDocumentTitle } from "../../lib/useAsync";
 import { CreateAssetModal } from "./assets/CreateAsset";
+import { tEnum, useT } from "../../i18n";
 
 type Sort = "risk" | "name" | "area" | "alerts";
 
 export default function Assets() {
-  useDocumentTitle("Forests & assets");
+  const { t } = useT();
+  useDocumentTitle(t("nav.assets"));
   const { can, me } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
@@ -49,9 +51,11 @@ export default function Assets() {
     <div className="page">
       <div className="page-head">
         <div>
-          <h1>Forests &amp; assets</h1>
+          <h1>{t("nav.assets")}</h1>
           <p>
-            {list.data ? `${fmtNum(list.data.length)}${limit != null ? ` of ${limit}` : ""} assets · ${fmtCompact(total)} ha monitored` : "Areas Firealerts watches for fires, danger and vegetation change."}
+            {list.data
+              ? `${limit != null ? t("assets.countOf", { n: fmtNum(list.data.length), limit }) : t("assets.count", { n: fmtNum(list.data.length) })} · ${t("assets.monitored", { ha: fmtCompact(total) })}`
+              : t("assets.lead")}
           </p>
         </div>
         <div className="row wrap">
@@ -60,11 +64,11 @@ export default function Assets() {
             onClick={() => dataApi.exportAssets("geojson").catch((e) => toast.error(e))}
             disabled={!list.data?.length}
           >
-            Export GeoJSON
+            {t("assets.exportGeojson")}
           </Button>
           {can("member") && (
             <Button variant="primary" icon={<IconPlus />} onClick={() => setCreating(true)}>
-              Add asset
+              {t("assets.add")}
             </Button>
           )}
         </div>
@@ -74,50 +78,50 @@ export default function Assets() {
         <div className="filters mb-16">
           <div className="search-box" style={{ width: 260, maxWidth: "100%" }}>
             <IconSearch size={14} />
-            <Input type="search" placeholder="Search name or tag" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search assets" />
+            <Input type="search" placeholder={t("assets.search")} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t("assets.searchAria")} />
           </div>
-          <Select value={kind} onChange={(e) => setKind(e.target.value)} aria-label="Filter by kind">
-            <option value="">All kinds</option>
+          <Select value={kind} onChange={(e) => setKind(e.target.value)} aria-label={t("assets.filterKind")}>
+            <option value="">{t("assets.allKinds")}</option>
             {kinds.map((k) => (
               <option key={k} value={k}>
-                {humanize(k)}
+                {tEnum("kind", k)}
               </option>
             ))}
           </Select>
-          <Select value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label="Sort">
-            <option value="risk">Sort: risk today</option>
-            <option value="alerts">Sort: open alerts</option>
-            <option value="area">Sort: area</option>
-            <option value="name">Sort: name</option>
+          <Select value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label={t("assets.sort")}>
+            <option value="risk">{t("assets.sort.risk")}</option>
+            <option value="alerts">{t("assets.sort.alerts")}</option>
+            <option value="area">{t("assets.sort.area")}</option>
+            <option value="name">{t("assets.sort.name")}</option>
           </Select>
           <div className="grow" />
-          <Segmented value={view} onChange={setView} options={[{ value: "cards", label: "Cards" }, { value: "table", label: "Table" }]} label="View" />
+          <Segmented value={view} onChange={setView} options={[{ value: "cards", label: t("assets.view.cards") }, { value: "table", label: t("assets.view.table") }]} label={t("assets.view")} />
         </div>
       )}
 
       {list.error ? (
         <ErrorState error={list.error} onRetry={list.reload} />
       ) : !list.data ? (
-        <Loading label="Loading assets" />
+        <Loading label={t("assets.loading")} />
       ) : list.data.length === 0 ? (
         <Card>
           <EmptyState
             icon={<IconTree size={20} />}
-            title="No assets yet"
+            title={t("assets.noneYet")}
             action={
               can("member") ? (
                 <Button variant="primary" icon={<IconPlus />} onClick={() => setCreating(true)}>
-                  Add your first asset
+                  {t("assets.addFirst")}
                 </Button>
               ) : undefined
             }
           >
-            Add forests, plantations, protected areas or infrastructure. You'll get alerts for nearby fires, fire-danger forecasts and Sentinel-2 vegetation monitoring for each.
+            {t("assets.emptyBody")}
           </EmptyState>
         </Card>
       ) : items.length === 0 ? (
         <Card>
-          <EmptyState title="No matches">Try a different search or filter.</EmptyState>
+          <EmptyState title={t("assets.noMatches")}>{t("assets.noMatchesBody")}</EmptyState>
         </Card>
       ) : view === "cards" ? (
         <div className="asset-grid">
@@ -129,24 +133,24 @@ export default function Assets() {
                     {a.name}
                   </div>
                   <div className="small muted">
-                    {humanize(a.kind)} · {fmtHa(a.area_ha)}
-                    {!a.active && " · paused"}
+                    {tEnum("kind", a.kind)} · {fmtHa(a.area_ha)}
+                    {!a.active && ` · ${t("assets.paused").toLowerCase()}`}
                   </div>
                 </div>
-                {a.risk_today ? <DangerPill danger={a.risk_today.danger} /> : <Badge>Risk pending</Badge>}
+                {a.risk_today ? <DangerPill danger={a.risk_today.danger} /> : <Badge>{t("assets.riskPending")}</Badge>}
               </div>
               <div className="metrics">
                 <div>
                   <b>{fmtNum(a.risk_today?.fwi)}</b>
-                  <span>FWI today</span>
+                  <span>{t("assets.fwiToday")}</span>
                 </div>
                 <div>
                   <b>{fmtPct(a.risk_today?.ignition_p)}</b>
-                  <span>Ignition</span>
+                  <span>{t("overview.col.ignition")}</span>
                 </div>
                 <div>
                   <b style={{ color: a.open_alerts ? "var(--sev-high)" : undefined }}>{a.open_alerts}</b>
-                  <span>Open alerts</span>
+                  <span>{t("overview.openAlerts")}</span>
                 </div>
               </div>
               {a.tags.length > 0 && (
@@ -167,13 +171,13 @@ export default function Assets() {
             <table className="table">
               <thead>
                 <tr>
-                  <th>Name</th>
-                  <th>Kind</th>
-                  <th className="right">Area</th>
-                  <th>Risk today</th>
+                  <th>{t("common.name")}</th>
+                  <th>{t("assets.kind")}</th>
+                  <th className="right">{t("assets.area")}</th>
+                  <th>{t("assets.riskToday")}</th>
                   <th className="right">FWI</th>
-                  <th className="right">Open alerts</th>
-                  <th>Tags</th>
+                  <th className="right">{t("overview.openAlerts")}</th>
+                  <th>{t("assets.tags")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -184,7 +188,7 @@ export default function Assets() {
                         {a.name}
                       </Link>
                     </td>
-                    <td>{humanize(a.kind)}</td>
+                    <td>{tEnum("kind", a.kind)}</td>
                     <td className="right">{fmtHa(a.area_ha)}</td>
                     <td>{a.risk_today ? <DangerPill danger={a.risk_today.danger} /> : <span className="muted">–</span>}</td>
                     <td className="right">{fmtNum(a.risk_today?.fwi)}</td>

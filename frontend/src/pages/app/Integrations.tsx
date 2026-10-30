@@ -4,11 +4,12 @@ import type { AlertType, Connector, NotificationRule, RuleInput, Severity } from
 import { useAuth } from "../../auth/AuthContext";
 import { ConnectorForm } from "../../components/ConnectorForm";
 import type { ConnectorFormResult } from "../../components/ConnectorForm";
-import { IconEdit, IconPlus, IconSend, IconTrash } from "../../components/Icons";
+import { IconEdit, IconPhone, IconPlus, IconSend, IconSmartphone, IconTrash } from "../../components/Icons";
 import { useToast } from "../../components/Toast";
 import { Badge, Button, Card, EmptyState, ErrorState, Input, Loading, Modal, Notice, Select, SeverityChip, Switch, useConfirm } from "../../components/ui";
 import { fmtNum, humanize, timeAgo } from "../../lib/format";
 import { useAsync, useDocumentTitle } from "../../lib/useAsync";
+import { tEnum, useT } from "../../i18n";
 
 type Category = "notification" | "data";
 
@@ -16,8 +17,26 @@ function initialsOf(label: string) {
   return label.replace(/\(.*\)/, "").replace(/[^A-Za-z ]/g, "").split(" ").filter(Boolean).map((w) => w[0]).join("").slice(0, 2).toUpperCase() || "?";
 }
 
+/** Connector badge: a pictogram for phone calls and mobile push, initials otherwise. */
+export function ConnectorIcon({ type, label }: { type: string; label: string }) {
+  if (type === "twilio_voice" || /voice|phone call/i.test(label))
+    return (
+      <span className="connector-icon" aria-hidden="true">
+        <IconPhone size={16} />
+      </span>
+    );
+  if (type === "push")
+    return (
+      <span className="connector-icon" aria-hidden="true">
+        <IconSmartphone size={16} />
+      </span>
+    );
+  return <span className="connector-icon">{initialsOf(label)}</span>;
+}
+
 function ConnectorCard({ c, canEdit, onEdit, onChanged, onDelete }: { c: Connector; canEdit: boolean; onEdit: () => void; onChanged: (c: Connector) => void; onDelete: () => void }) {
   const toast = useToast();
+  const { t } = useT();
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   const test = async () => {
@@ -42,18 +61,19 @@ function ConnectorCard({ c, canEdit, onEdit, onChanged, onDelete }: { c: Connect
   };
   const summary = Object.entries(c.config)
     .filter(([, v]) => v !== "" && v != null && v !== false && !(Array.isArray(v) && !v.length))
-    .map(([k, v]) => `${humanize(k)}: ${Array.isArray(v) ? v.join(", ") : v === true ? "yes" : String(v)}`)
+    .map(([k, v]) => `${humanize(k)}: ${Array.isArray(v) ? v.join(", ") : v === true ? t("common.yes") : String(v)}`)
     .slice(0, 2);
   return (
     <div className="connector-card">
       <div className="row top">
-        <span className="connector-icon">{initialsOf(c.label)}</span>
+        <ConnectorIcon type={c.type} label={c.label} />
         <div className="grow" style={{ minWidth: 0 }}>
           <div className="strong truncate">{c.name}</div>
           <div className="tiny muted">{c.label}</div>
         </div>
-        <Switch checked={c.enabled} onChange={toggle} disabled={!canEdit} label={<span className="sr-only">Enabled</span>} />
+        <Switch checked={c.enabled} onChange={toggle} disabled={!canEdit} label={<span className="sr-only">{t("common.enabled")}</span>} />
       </div>
+      {c.type === "push" && <div className="tiny muted">{t("integ.pushHint")}</div>}
       {summary.length > 0 && (
         <div className="tiny muted" style={{ wordBreak: "break-all" }}>
           {summary.map((s) => (
@@ -66,8 +86,8 @@ function ConnectorCard({ c, canEdit, onEdit, onChanged, onDelete }: { c: Connect
       <div className="row small">
         <span className={`status-dot ${c.last_status === "ok" ? "ok" : c.last_status === "error" ? "bad" : "idle"}`} />
         <span className="muted">
-          {c.last_status === "ok" ? "Working" : c.last_status === "error" ? "Last attempt failed" : "Not used yet"}
-          {c.last_used_at && ` · used ${timeAgo(c.last_used_at)}`}
+          {c.last_status === "ok" ? t("integ.working") : c.last_status === "error" ? t("integ.failed") : t("integ.unused")}
+          {c.last_used_at && ` · ${t("integ.used", { ago: timeAgo(c.last_used_at) })}`}
         </span>
       </div>
       {c.last_status === "error" && c.last_error && !result && <div className="tiny bad-text" style={{ wordBreak: "break-word" }}>{c.last_error}</div>}
@@ -80,13 +100,13 @@ function ConnectorCard({ c, canEdit, onEdit, onChanged, onDelete }: { c: Connect
       {canEdit && (
         <div className="row" style={{ marginTop: "auto" }}>
           <Button size="sm" icon={<IconSend />} loading={testing} onClick={test}>
-            Send test
+            {t("integ.sendTest")}
           </Button>
           <Button size="sm" variant="ghost" icon={<IconEdit />} onClick={onEdit}>
-            Edit
+            {t("common.edit")}
           </Button>
           <div className="grow" />
-          <Button size="sm" variant="ghost" iconOnly aria-label={`Delete ${c.name}`} title="Delete" onClick={onDelete}>
+          <Button size="sm" variant="ghost" iconOnly aria-label={t("integ.deleteNamed", { name: c.name })} title={t("common.delete")} onClick={onDelete}>
             <IconTrash />
           </Button>
         </div>
@@ -98,6 +118,7 @@ function ConnectorCard({ c, canEdit, onEdit, onChanged, onDelete }: { c: Connect
 function RuleModal({ rule, connectors, onClose, onSaved }: { rule: NotificationRule | null; connectors: Connector[]; onClose: () => void; onSaved: () => void }) {
   const { meta } = useAuth();
   const toast = useToast();
+  const { t } = useT();
   const assets = useAsync(() => assetsApi.list(), []);
   const types = (meta?.alert_types ?? ["detection", "threat", "risk", "system"]) as AlertType[];
   const sevs = (meta?.severities ?? ["info", "low", "moderate", "high", "critical"]) as Severity[];
@@ -112,17 +133,17 @@ function RuleModal({ rule, connectors, onClose, onSaved }: { rule: NotificationR
   const notif = connectors.filter((c) => c.category === "notification");
 
   const save = async () => {
-    if (!form.name.trim()) return setErr("Give the rule a name.");
-    if (!form.alert_types.length) return setErr("Pick at least one alert type.");
-    if (!form.connector_ids.length) return setErr("Pick at least one channel to deliver to.");
-    if (form.asset_ids && !form.asset_ids.length) return setErr("Pick at least one asset, or choose “All assets”.");
+    if (!form.name.trim()) return setErr(t("rule.errName"));
+    if (!form.alert_types.length) return setErr(t("rule.errTypes"));
+    if (!form.connector_ids.length) return setErr(t("rule.errChannels"));
+    if (form.asset_ids && !form.asset_ids.length) return setErr(t("rule.errAssets"));
     setBusy(true);
     setErr(null);
     try {
       const body = { ...form, name: form.name.trim() };
       if (rule) await rulesApi.update(rule.id, body);
       else await rulesApi.create(body);
-      toast.success(rule ? "Rule updated." : "Rule created.");
+      toast.success(rule ? t("rule.updated") : t("rule.created"));
       onSaved();
       onClose();
     } catch (e) {
@@ -136,41 +157,41 @@ function RuleModal({ rule, connectors, onClose, onSaved }: { rule: NotificationR
     <Modal
       open
       onClose={onClose}
-      title={rule ? "Edit notification rule" : "New notification rule"}
-      description="Rules decide which alerts go to which channels."
+      title={rule ? t("rule.editTitle") : t("rule.newTitle")}
+      description={t("rule.desc")}
       size="wide"
       footer={
         <>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{t("common.cancel")}</Button>
           <Button variant="primary" loading={busy} onClick={save}>
-            {rule ? "Save rule" : "Create rule"}
+            {rule ? t("rule.save") : t("rule.create")}
           </Button>
         </>
       }
     >
       <div className="stack loose">
         <div className="form-grid">
-          <Input label="Rule name" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Critical threats to on-call" />
-          <Select label="Minimum severity" value={form.min_severity} onChange={(e) => setForm({ ...form, min_severity: e.target.value as Severity })} options={sevs.map((s) => ({ value: s, label: `${humanize(s)} and above` }))} />
+          <Input label={t("rule.name")} required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={t("rule.namePh")} />
+          <Select label={t("rule.minSeverity")} value={form.min_severity} onChange={(e) => setForm({ ...form, min_severity: e.target.value as Severity })} options={sevs.map((s) => ({ value: s, label: t("rule.andAbove", { sev: tEnum("severityName", s) }) }))} />
         </div>
         <div className="field">
-          <span className="field-label">Alert types</span>
+          <span className="field-label">{t("rule.types")}</span>
           <div className="row wrap">
-            {types.map((t) => (
-              <button key={t} type="button" className="chip-toggle" aria-pressed={form.alert_types.includes(t)} onClick={() => setForm({ ...form, alert_types: toggle(form.alert_types, t) })}>
-                {humanize(t)}
+            {types.map((x) => (
+              <button key={x} type="button" className="chip-toggle" aria-pressed={form.alert_types.includes(x)} onClick={() => setForm({ ...form, alert_types: toggle(form.alert_types, x) })}>
+                {tEnum("alertType", x)}
               </button>
             ))}
           </div>
         </div>
         <div className="field">
-          <span className="field-label">Assets</span>
+          <span className="field-label">{t("live.tab.assets")}</span>
           <div className="row wrap">
             <button type="button" className="chip-toggle" aria-pressed={form.asset_ids === null} onClick={() => setForm({ ...form, asset_ids: null })}>
-              All assets (incl. future)
+              {t("rule.allAssets")}
             </button>
             <button type="button" className="chip-toggle" aria-pressed={form.asset_ids !== null} onClick={() => setForm({ ...form, asset_ids: form.asset_ids ?? [] })}>
-              Selected assets
+              {t("rule.selectedAssets")}
             </button>
           </div>
           {form.asset_ids !== null && (
@@ -178,7 +199,7 @@ function RuleModal({ rule, connectors, onClose, onSaved }: { rule: NotificationR
               {!assets.data ? (
                 <Loading />
               ) : assets.data.length === 0 ? (
-                <span className="small muted">No assets yet.</span>
+                <span className="small muted">{t("assets.noneYet")}</span>
               ) : (
                 assets.data.map((a) => (
                   <button key={a.id} type="button" className="chip-toggle" aria-pressed={form.asset_ids!.includes(a.id)} onClick={() => setForm({ ...form, asset_ids: toggle(form.asset_ids!, a.id) })}>
@@ -190,9 +211,9 @@ function RuleModal({ rule, connectors, onClose, onSaved }: { rule: NotificationR
           )}
         </div>
         <div className="field">
-          <span className="field-label">Deliver to</span>
+          <span className="field-label">{t("rule.deliverTo")}</span>
           {notif.length === 0 ? (
-            <span className="small muted">Add a notification channel first.</span>
+            <span className="small muted">{t("rule.noChannels")}</span>
           ) : (
             <div className="row wrap">
               {notif.map((c) => (
@@ -203,7 +224,7 @@ function RuleModal({ rule, connectors, onClose, onSaved }: { rule: NotificationR
             </div>
           )}
         </div>
-        <Switch checked={form.enabled} onChange={(v) => setForm({ ...form, enabled: v })} label="Rule enabled" />
+        <Switch checked={form.enabled} onChange={(v) => setForm({ ...form, enabled: v })} label={t("rule.enabled")} />
         {err && <div className="form-error">{err}</div>}
       </div>
     </Modal>
@@ -211,7 +232,8 @@ function RuleModal({ rule, connectors, onClose, onSaved }: { rule: NotificationR
 }
 
 export default function Integrations() {
-  useDocumentTitle("Integrations");
+  const { t } = useT();
+  useDocumentTitle(t("nav.integrations"));
   const { meta, can, me } = useAuth();
   const toast = useToast();
   const { confirm, dialog } = useConfirm();
@@ -238,11 +260,11 @@ export default function Integrations() {
       if (editing) {
         const c = await connApi.update(editing.id, r);
         list.setData((xs) => (xs ?? []).map((x) => (x.id === c.id ? c : x)));
-        toast.success("Connection updated.");
+        toast.success(t("integ.updated"));
       } else if (type) {
         const c = await connApi.create({ type, ...r });
         list.setData((xs) => [...(xs ?? []), c]);
-        toast.success(`${c.label} connected. Send a test to check it works.`);
+        toast.success(t("integ.connected", { label: c.label }));
       }
       closeForm();
     } catch (e) {
@@ -253,7 +275,7 @@ export default function Integrations() {
   };
 
   const remove = async (c: Connector) => {
-    if (!(await confirm({ title: `Delete “${c.name}”?`, body: "It will be removed from all notification rules.", confirmLabel: "Delete", danger: true }))) return;
+    if (!(await confirm({ title: t("integ.deleteTitle", { name: c.name }), body: t("integ.deleteBody"), confirmLabel: t("common.delete"), danger: true }))) return;
     try {
       await connApi.remove(c.id);
       list.setData((xs) => (xs ?? []).filter((x) => x.id !== c.id));
@@ -264,7 +286,7 @@ export default function Integrations() {
   };
 
   const removeRule = async (r: NotificationRule) => {
-    if (!(await confirm({ title: `Delete rule “${r.name}”?`, confirmLabel: "Delete", danger: true }))) return;
+    if (!(await confirm({ title: t("rule.deleteTitle", { name: r.name }), confirmLabel: t("common.delete"), danger: true }))) return;
     try {
       await rulesApi.remove(r.id);
       void rules.reload();
@@ -292,7 +314,7 @@ export default function Integrations() {
         actions={
           canEdit && (
             <Button size="sm" variant={cat === "notification" ? "primary" : "default"} icon={<IconPlus />} onClick={() => setAdding(cat)}>
-              Add {cat === "notification" ? "channel" : "data source"}
+              {cat === "notification" ? t("integ.addChannel") : t("integ.addSource")}
             </Button>
           )
         }
@@ -300,10 +322,8 @@ export default function Integrations() {
         {!list.data ? (
           list.error ? <ErrorState error={list.error} onRetry={list.reload} /> : <Loading />
         ) : items.length === 0 ? (
-          <EmptyState title={cat === "notification" ? "No channels yet" : "No data sources connected"}>
-            {cat === "notification"
-              ? "Alerts are shown in-app. Connect e-mail, Slack, Teams, SMS, WhatsApp, PagerDuty or a webhook to be notified."
-              : "Connect Google Earth Engine or Global Forest Watch for burned-area history and forest-loss analytics, or your own FIRMS key."}
+          <EmptyState title={cat === "notification" ? t("integ.noChannels") : t("integ.noSources")}>
+            {cat === "notification" ? t("integ.noChannelsBody") : t("integ.noSourcesBody")}
           </EmptyState>
         ) : (
           <div className="connector-grid">
@@ -325,36 +345,36 @@ export default function Integrations() {
     <div className="page">
       <div className="page-head">
         <div>
-          <h1>Integrations</h1>
+          <h1>{t("nav.integrations")}</h1>
           <p>
-            Where alerts go and which external data sources power your analytics.
-            {limit != null && list.data && ` ${fmtNum(list.data.length)} of ${limit} connections used.`}
+            {t("integ.lead")}
+            {limit != null && list.data && ` ${t("integ.used2", { n: fmtNum(list.data.length), limit })}`}
           </p>
         </div>
       </div>
       {!canEdit && (
         <div className="mb-16">
-          <Notice kind="info">Only organisation admins can add or change integrations.</Notice>
+          <Notice kind="info">{t("integ.adminsOnly")}</Notice>
         </div>
       )}
       <div className="stack loose">
-        {section("notification", "Notification channels", "E-mail, chat, SMS, paging and webhooks")}
+        {section("notification", t("integ.channels"), t("integ.channelsSub"))}
 
         <Card
-          title="Notification rules"
-          sub="Route alerts by asset, type and severity"
+          title={t("integ.rules")}
+          sub={t("integ.rulesSub")}
           actions={
             canEdit && (
               <Button size="sm" icon={<IconPlus />} onClick={() => setRuleModal("new")} disabled={!list.data?.some((c) => c.category === "notification")}>
-                New rule
+                {t("integ.newRule")}
               </Button>
             )
           }
           flush
         >
           <div className="card-body" style={{ paddingBottom: rules.data?.length ? 0 : undefined }}>
-            <Notice kind="info" title="Default routing">
-              With no rules, every alert of <b>moderate</b> severity or higher goes to all enabled notification channels. As soon as you add a rule, only matching rules deliver.
+            <Notice kind="info" title={t("integ.defaultRouting")}>
+              {t("integ.defaultRoutingBody")}
             </Notice>
           </div>
           {rules.data && rules.data.length > 0 && (
@@ -362,12 +382,12 @@ export default function Integrations() {
               <table className="table">
                 <thead>
                   <tr>
-                    <th>Rule</th>
-                    <th>Assets</th>
-                    <th>Types</th>
-                    <th>Min severity</th>
-                    <th>Channels</th>
-                    <th>On</th>
+                    <th>{t("integ.col.rule")}</th>
+                    <th>{t("live.tab.assets")}</th>
+                    <th>{t("integ.col.types")}</th>
+                    <th>{t("integ.col.minSev")}</th>
+                    <th>{t("integ.col.channels")}</th>
+                    <th>{t("integ.col.on")}</th>
                     <th />
                   </tr>
                 </thead>
@@ -375,22 +395,22 @@ export default function Integrations() {
                   {rules.data.map((r) => (
                     <tr key={r.id}>
                       <td className="strong">{r.name}</td>
-                      <td className="small">{r.asset_ids === null ? "All assets" : r.asset_ids.map(assetName).join(", ") || "–"}</td>
-                      <td className="small">{r.alert_types.map(humanize).join(", ")}</td>
+                      <td className="small">{r.asset_ids === null ? t("alerts.allAssets") : r.asset_ids.map(assetName).join(", ") || "–"}</td>
+                      <td className="small">{r.alert_types.map((x) => tEnum("alertType", x)).join(", ")}</td>
                       <td>
                         <SeverityChip severity={r.min_severity} />
                       </td>
-                      <td className="small">{r.connector_ids.length ? r.connector_ids.map(connName).join(", ") : <span className="warn-text">none</span>}</td>
+                      <td className="small">{r.connector_ids.length ? r.connector_ids.map(connName).join(", ") : <span className="warn-text">{t("integ.none")}</span>}</td>
                       <td>
-                        <Switch checked={r.enabled} onChange={(v) => toggleRule(r, v)} disabled={!canEdit} label={<span className="sr-only">Enabled</span>} />
+                        <Switch checked={r.enabled} onChange={(v) => toggleRule(r, v)} disabled={!canEdit} label={<span className="sr-only">{t("common.enabled")}</span>} />
                       </td>
                       <td className="actions">
                         {canEdit && (
                           <>
-                            <Button size="sm" variant="ghost" iconOnly aria-label="Edit rule" onClick={() => setRuleModal(r)}>
+                            <Button size="sm" variant="ghost" iconOnly aria-label={t("integ.editRule")} onClick={() => setRuleModal(r)}>
                               <IconEdit />
                             </Button>
-                            <Button size="sm" variant="ghost" iconOnly aria-label="Delete rule" onClick={() => removeRule(r)}>
+                            <Button size="sm" variant="ghost" iconOnly aria-label={t("integ.deleteRule")} onClick={() => removeRule(r)}>
                               <IconTrash />
                             </Button>
                           </>
@@ -404,20 +424,20 @@ export default function Integrations() {
           )}
         </Card>
 
-        {section("data", "Data sources", "Bring your own credentials for premium analytics")}
+        {section("data", t("integ.sources"), t("integ.sourcesSub"))}
       </div>
 
-      <Modal open={!!adding && !type} onClose={closeForm} title={adding === "data" ? "Connect a data source" : "Add a notification channel"} size="wide">
+      <Modal open={!!adding && !type} onClose={closeForm} title={adding === "data" ? t("integ.connectSource") : t("integ.addChannelTitle")} size="wide">
         <div className="type-picker">
           {Object.entries(types)
-            .filter(([, t]) => t.category === adding)
-            .map(([key, t]) => (
+            .filter(([, ct]) => ct.category === adding)
+            .map(([key, ct]) => (
               <button key={key} type="button" className="type-option" onClick={() => setType(key)}>
-                <span className="connector-icon">{initialsOf(t.label)}</span>
+                <ConnectorIcon type={key} label={ct.label} />
                 <span>
-                  <span className="strong">{t.label}</span>
+                  <span className="strong">{ct.label}</span>
                   <span className="desc" style={{ display: "block" }}>
-                    {t.description}
+                    {ct.description}
                   </span>
                 </span>
               </button>
@@ -426,13 +446,13 @@ export default function Integrations() {
       </Modal>
 
       {spec && (
-        <Modal open onClose={closeForm} title={editing ? `Edit ${editing.name}` : `Connect ${spec.label}`}>
+        <Modal open onClose={closeForm} title={editing ? t("integ.editTitle", { name: editing.name }) : t("integ.connectTitle", { label: spec.label })}>
           <ConnectorForm spec={spec} existing={editing ?? undefined} onSubmit={submit} onCancel={closeForm} busy={busy} />
         </Modal>
       )}
       {ruleModal && <RuleModal rule={ruleModal === "new" ? null : ruleModal} connectors={list.data ?? []} onClose={() => setRuleModal(null)} onSaved={rules.reload} />}
       {dialog}
-      {editing && !spec && <Badge kind="warn">Unknown connector type {editing.type}</Badge>}
+      {editing && !spec && <Badge kind="warn">{t("common.unknownConnector", { type: editing.type })}</Badge>}
     </div>
   );
 }

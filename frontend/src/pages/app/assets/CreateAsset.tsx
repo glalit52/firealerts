@@ -11,15 +11,17 @@ import type { AssetFormValues } from "../../../components/AssetFields";
 import { IconCheck, IconCircle, IconCrosshair, IconPolygon, IconUndo, IconUpload, IconX } from "../../../components/Icons";
 import { useToast } from "../../../components/Toast";
 import { Button, Input, Modal, Notice, Select, Tabs } from "../../../components/ui";
-import { fmtHa, fmtNum, humanize } from "../../../lib/format";
+import { fmtHa, fmtNum } from "../../../lib/format";
 import { DrawController, drawResult, emptyDraw } from "../../../map/draw";
 import type { DrawMode, DrawState } from "../../../map/draw";
 import { MapView } from "../../../map/MapView";
 import { addAssetLayers, assetsToFC, fitGeometry, setData } from "../../../map/utils";
+import { tEnum, useT } from "../../../i18n";
 
 function DrawTab({ existing, onCreated }: { existing: AssetListItem[]; onCreated: (id: number) => void }) {
   const { me } = useAuth();
   const toast = useToast();
+  const { t } = useT();
   const [map, setMap] = useState<MlMap | null>(null);
   const ctl = useRef<DrawController | null>(null);
   const [state, setState] = useState<DrawState>(emptyDraw());
@@ -57,21 +59,21 @@ function DrawTab({ existing, onCreated }: { existing: AssetListItem[]; onCreated
 
   const hint = !drawing
     ? result.ok
-      ? `Area ready: ${fmtHa(result.areaHa)}. Fill in the details and save.`
-      : "Choose Polygon or Circle, then click on the map."
+      ? t("create.hint.ready", { area: fmtHa(result.areaHa) })
+      : t("create.hint.choose")
     : state.mode === "polygon"
       ? state.vertices.length < 3
-        ? `Click to add points (${state.vertices.length}/3 minimum). Backspace undoes.`
-        : "Click the first point, double-click or press Enter to finish."
+        ? t("create.hint.points", { n: state.vertices.length })
+        : t("create.hint.finish")
       : !state.center
-        ? "Click to place the centre."
-        : "Click again to set the radius, or type it in the toolbar.";
+        ? t("create.hint.centre")
+        : t("create.hint.radius");
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!values.name.trim()) return setError("Give the asset a name.");
+    if (!values.name.trim()) return setError(t("create.needName"));
     if (!result.ok) return setError(result.reason);
-    if (limitHa != null && result.areaHa > limitHa) return setError(`Your plan allows assets up to ${fmtNum(limitHa)} ha; this one is ${fmtNum(result.areaHa)} ha.`);
+    if (limitHa != null && result.areaHa > limitHa) return setError(t("create.tooLarge", { max: fmtNum(limitHa), area: fmtNum(result.areaHa) }));
     setBusy(true);
     setError(null);
     try {
@@ -80,7 +82,7 @@ function DrawTab({ existing, onCreated }: { existing: AssetListItem[]; onCreated
         state.mode === "circle" && result.center && result.radiusKm
           ? await assetsApi.create({ ...body, center: [result.center[1], result.center[0]], radius_km: Math.round(result.radiusKm * 1000) / 1000 })
           : await assetsApi.create({ ...body, geometry: result.polygon });
-      toast.success(`${a.name} is now monitored (${fmtHa(a.area_ha)}).`);
+      toast.success(t("create.created", { name: a.name, area: fmtHa(a.area_ha) }));
       onCreated(a.id);
     } catch (err) {
       toast.error(err);
@@ -93,13 +95,13 @@ function DrawTab({ existing, onCreated }: { existing: AssetListItem[]; onCreated
   return (
     <form className="draw-layout" onSubmit={submit}>
       <div className="draw-map">
-        <MapView onReady={onReady} ariaLabel="Draw an asset">
+        <MapView onReady={onReady} ariaLabel={t("create.drawAria")}>
           <div className="draw-tools map-overlay">
             <Button size="sm" icon={<IconPolygon />} active={drawing && state.mode === "polygon"} onClick={() => start("polygon")}>
-              Polygon
+              {t("create.polygon")}
             </Button>
             <Button size="sm" icon={<IconCircle />} active={drawing && state.mode === "circle"} onClick={() => start("circle")}>
-              Circle
+              {t("create.circle")}
             </Button>
             {drawing && state.mode === "circle" && state.center && (
               <input
@@ -109,20 +111,20 @@ function DrawTab({ existing, onCreated }: { existing: AssetListItem[]; onCreated
                 min={0.1}
                 max={200}
                 step={0.1}
-                placeholder="radius km"
-                aria-label="Radius in km"
+                placeholder={t("create.radiusPh")}
+                aria-label={t("create.radiusAria")}
                 value={state.radiusKm ? Math.round(state.radiusKm * 100) / 100 : ""}
                 onChange={(e) => ctl.current?.setRadius(+e.target.value)}
               />
             )}
             {hasShape && (
-              <Button size="sm" icon={<IconUndo />} onClick={() => ctl.current?.undo()} disabled={!drawing} title="Undo (Backspace)">
-                Undo
+              <Button size="sm" icon={<IconUndo />} onClick={() => ctl.current?.undo()} disabled={!drawing} title={t("create.undoTitle")}>
+                {t("create.undo")}
               </Button>
             )}
             {drawing && (
               <Button size="sm" variant="primary" icon={<IconCheck />} onClick={() => ctl.current?.finish()} disabled={!result.ok}>
-                Finish
+                {t("create.finish")}
               </Button>
             )}
             {(drawing || hasShape) && (
@@ -135,15 +137,15 @@ function DrawTab({ existing, onCreated }: { existing: AssetListItem[]; onCreated
                   setDrawing(false);
                 }}
               >
-                Clear
+                {t("create.clear")}
               </Button>
             )}
             <span className="row" style={{ gap: 4 }}>
               <input
                 className="input sm"
                 style={{ width: 150 }}
-                placeholder="Go to lat, lon"
-                aria-label="Go to coordinates"
+                placeholder={t("create.gotoPh")}
+                aria-label={t("create.gotoAria")}
                 value={goto}
                 onChange={(e) => setGoto(e.target.value)}
                 onKeyDown={(e) => {
@@ -151,10 +153,10 @@ function DrawTab({ existing, onCreated }: { existing: AssetListItem[]; onCreated
                   e.preventDefault();
                   const [la, lo] = goto.split(/[,\s]+/).map(Number);
                   if (Number.isFinite(la) && Number.isFinite(lo) && Math.abs(la!) <= 90 && Math.abs(lo!) <= 180) map?.flyTo({ center: [lo!, la!], zoom: 11 });
-                  else toast.show("Enter coordinates as “lat, lon”, e.g. -31.25, -64.65", "warning");
+                  else toast.show(t("create.gotoBad"), "warning");
                 }}
               />
-              <Button size="sm" iconOnly aria-label="Go" title="Go to coordinates" onClick={() => {
+              <Button size="sm" iconOnly aria-label={t("create.go")} title={t("create.gotoAria")} onClick={() => {
                 const [la, lo] = goto.split(/[,\s]+/).map(Number);
                 if (Number.isFinite(la) && Number.isFinite(lo)) map?.flyTo({ center: [lo!, la!], zoom: 11 });
               }}>
@@ -170,13 +172,13 @@ function DrawTab({ existing, onCreated }: { existing: AssetListItem[]; onCreated
       <div className="stack">
         <div className="card inset" style={{ padding: 12 }}>
           <div className="row between small">
-            <span className="muted">Area</span>
+            <span className="muted">{t("assets.area")}</span>
             <b className="num">{result.ok ? fmtHa(result.areaHa) : "–"}</b>
           </div>
           {limitHa != null && (
             <div className="tiny muted mt-4">
-              Plan limit {fmtNum(limitHa)} ha per asset
-              {result.ok && result.areaHa > limitHa && <span className="bad-text"> · too large</span>}
+              {t("create.planLimit", { ha: fmtNum(limitHa) })}
+              {result.ok && result.areaHa > limitHa && <span className="bad-text"> · {t("create.tooLargeShort")}</span>}
             </div>
           )}
           {!result.ok && hasShape && !drawing && <div className="tiny warn-text mt-4">{result.reason}</div>}
@@ -184,7 +186,7 @@ function DrawTab({ existing, onCreated }: { existing: AssetListItem[]; onCreated
         <AssetFields value={values} onChange={setValues} compact />
         {error && <div className="form-error" role="alert">{error}</div>}
         <Button type="submit" variant="primary" loading={busy} disabled={!result.ok || drawing}>
-          Create asset
+          {t("create.submit")}
         </Button>
       </div>
     </form>
@@ -194,6 +196,7 @@ function DrawTab({ existing, onCreated }: { existing: AssetListItem[]; onCreated
 function UploadTab({ onDone }: { onDone: (r: ImportResult) => void }) {
   const { meta, me } = useAuth();
   const toast = useToast();
+  const { t } = useT();
   const [file, setFile] = useState<File | null>(null);
   const [kind, setKind] = useState("forest");
   const [buffer, setBuffer] = useState<number>(me?.org?.settings?.default_buffer_km ?? 2);
@@ -205,11 +208,11 @@ function UploadTab({ onDone }: { onDone: (r: ImportResult) => void }) {
   const pick = (f: File | undefined) => {
     if (!f) return;
     if (!/\.(geojson|json|kml|kmz|zip)$/i.test(f.name)) {
-      toast.show("Supported formats: .geojson, .json, .kml, .kmz, or a .zip containing a Shapefile.", "warning");
+      toast.show(t("upload.formats"), "warning");
       return;
     }
     if (f.size > 20 * 1024 * 1024) {
-      toast.show("Files can be up to 20 MB.", "warning");
+      toast.show(t("upload.tooBig"), "warning");
       return;
     }
     setFile(f);
@@ -222,7 +225,7 @@ function UploadTab({ onDone }: { onDone: (r: ImportResult) => void }) {
     try {
       const r = await assetsApi.import(file, kind, buffer);
       setResult(r);
-      if (r.created.length) toast.success(`Imported ${r.created.length} asset${r.created.length === 1 ? "" : "s"}.`);
+      if (r.created.length) toast.success(t("upload.imported", { count: r.created.length }));
       onDone(r);
     } catch (err) {
       toast.error(err);
@@ -246,32 +249,32 @@ function UploadTab({ onDone }: { onDone: (r: ImportResult) => void }) {
           pick(e.dataTransfer.files?.[0]);
         }}
       >
-        <input ref={input} type="file" accept=".geojson,.json,.kml,.kmz,.zip" className="sr-only" onChange={(e) => pick(e.target.files?.[0])} aria-label="Boundary file" />
+        <input ref={input} type="file" accept=".geojson,.json,.kml,.kmz,.zip" className="sr-only" onChange={(e) => pick(e.target.files?.[0])} aria-label={t("upload.fileAria")} />
         <IconUpload size={22} />
         <div className="strong mt-8" style={{ color: "var(--text)" }}>
-          {file ? file.name : "Drop a boundary file here, or click to browse"}
+          {file ? file.name : t("upload.drop")}
         </div>
-        <div className="small mt-4">{file ? `${fmtNum(file.size / 1024, 0)} KB` : "GeoJSON, KML, KMZ or zipped Shapefile (.zip with .shp/.dbf/.prj) · max 20 MB"}</div>
+        <div className="small mt-4">{file ? `${fmtNum(file.size / 1024, 0)} KB` : t("upload.dropHint")}</div>
       </label>
       <div className="form-grid">
-        <Select label="Kind for imported areas" value={kind} onChange={(e) => setKind(e.target.value)} options={(meta?.asset_kinds ?? ["forest"]).map((k) => ({ value: k, label: humanize(k) }))} />
-        <Input label="Detection buffer (km)" type="number" min={0} max={100} step={0.5} value={buffer} onChange={(e) => setBuffer(+e.target.value)} />
+        <Select label={t("upload.kind")} value={kind} onChange={(e) => setKind(e.target.value)} options={(meta?.asset_kinds ?? ["forest"]).map((k) => ({ value: k, label: tEnum("kind", k) }))} />
+        <Input label={t("assetForm.buffer")} type="number" min={0} max={100} step={0.5} value={buffer} onChange={(e) => setBuffer(+e.target.value)} />
       </div>
-      <p className="small muted">Each polygon feature becomes one asset, named from its “name”/“NAME” attribute. Other attributes are kept as properties. You can fine-tune each asset afterwards.</p>
+      <p className="small muted">{t("upload.explain")}</p>
       <div className="row">
         <Button variant="primary" icon={<IconUpload />} disabled={!file} loading={busy} onClick={submit}>
-          Import
+          {t("upload.import")}
         </Button>
         {file && (
           <Button variant="ghost" onClick={() => (setFile(null), setResult(null), input.current && (input.current.value = ""))}>
-            Choose another file
+            {t("upload.another")}
           </Button>
         )}
       </div>
       {result && (
         <div className="stack tight">
           {result.created.length > 0 && (
-            <Notice kind="ok" title={`${result.created.length} asset${result.created.length === 1 ? "" : "s"} created`}>
+            <Notice kind="ok" title={t("upload.created", { count: result.created.length })}>
               {result.created
                 .slice(0, 8)
                 .map((a) => `${a.name} (${fmtHa(a.area_ha)})`)
@@ -280,11 +283,11 @@ function UploadTab({ onDone }: { onDone: (r: ImportResult) => void }) {
             </Notice>
           )}
           {result.errors.length > 0 && (
-            <Notice kind="warn" title={`${result.errors.length} feature${result.errors.length === 1 ? "" : "s"} skipped`}>
+            <Notice kind="warn" title={t("upload.skipped", { count: result.errors.length })}>
               {result.errors.slice(0, 6).map((e) => `#${e.feature + 1}: ${e.error}`).join(" · ")}
             </Notice>
           )}
-          {result.created.length === 0 && result.errors.length === 0 && <Notice kind="warn">No polygon features were found in this file.</Notice>}
+          {result.created.length === 0 && result.errors.length === 0 && <Notice kind="warn">{t("upload.none")}</Notice>}
         </div>
       )}
     </div>
@@ -294,16 +297,17 @@ function UploadTab({ onDone }: { onDone: (r: ImportResult) => void }) {
 export function CreateAssetModal({ open, onClose, existing, onChanged }: { open: boolean; onClose: () => void; existing: AssetListItem[]; onChanged: () => void }) {
   const [tab, setTab] = useState<"draw" | "upload">("draw");
   const navigate = useNavigate();
+  const { t } = useT();
   return (
-    <Modal open={open} onClose={onClose} title="Add a forest or asset" description="Draw the boundary on the map, or import existing boundaries from a file." size="xwide">
+    <Modal open={open} onClose={onClose} title={t("create.title")} description={t("create.desc")} size="xwide">
       <Tabs
         value={tab}
         onChange={setTab}
         tabs={[
-          { id: "draw", label: "Draw on map" },
-          { id: "upload", label: "Upload file" },
+          { id: "draw", label: t("create.tab.draw") },
+          { id: "upload", label: t("create.tab.upload") },
         ]}
-        label="Create method"
+        label={t("create.method")}
       />
       <div className="mt-16">
         {tab === "draw" ? (

@@ -1,4 +1,5 @@
 /* Low-level fetch client: base URL, auth headers, error handling. */
+import { getLocale, t } from "../i18n";
 
 export const API_BASE: string = (import.meta.env.VITE_API_URL ?? "").replace(/\/+$/, "");
 
@@ -127,7 +128,7 @@ export function authHeaders(): Record<string, string> {
 }
 
 export async function request<T = unknown>(path: string, opts: RequestOptions = {}): Promise<T> {
-  const headers: Record<string, string> = { Accept: "application/json", ...authHeaders(), ...(opts.headers || {}) };
+  const headers: Record<string, string> = { Accept: "application/json", "Accept-Language": getLocale(), ...authHeaders(), ...(opts.headers || {}) };
   let body: BodyInit | undefined;
   if (opts.body instanceof FormData) body = opts.body;
   else if (opts.body !== undefined) {
@@ -139,7 +140,7 @@ export async function request<T = unknown>(path: string, opts: RequestOptions = 
     res = await fetch(buildUrl(path, opts.query), { method: opts.method || (body ? "POST" : "GET"), headers, body, signal: opts.signal });
   } catch (err) {
     if ((err as Error)?.name === "AbortError") throw err;
-    throw new ApiError(0, "Can't reach the Firealerts server. Check your connection and try again.");
+    throw new ApiError(0, t("api.unreachable"));
   }
   if (!res.ok) {
     let detail: unknown;
@@ -148,7 +149,7 @@ export async function request<T = unknown>(path: string, opts: RequestOptions = 
     } catch {
       detail = undefined;
     }
-    const fallback = res.status === 404 ? "Not found" : res.status >= 500 ? `Server error (${res.status})` : res.statusText || `Request failed (${res.status})`;
+    const fallback = res.status === 404 ? t("api.notFound") : res.status >= 500 ? t("api.serverError", { status: res.status }) : res.statusText || t("api.requestFailed", { status: res.status });
     const err = new ApiError(res.status, describeDetail(detail, fallback), detail);
     if (!opts.quiet) {
       if (res.status === 401 && !path.startsWith("/api/auth/")) {

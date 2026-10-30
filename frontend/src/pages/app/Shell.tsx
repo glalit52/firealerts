@@ -5,25 +5,30 @@ import type { Status } from "../../api/types";
 import { useAuth } from "../../auth/AuthContext";
 import {
   FlameLogo, IconBell, IconBuilding, IconChevronDown, IconDashboard, IconDatabase, IconKey, IconLogout, IconMap, IconMenu, IconPlug, IconPlus,
-  IconShield, IconTree, IconUser, IconUsers, IconX, IconCheck,
+  IconShield, IconTree, IconUser, IconUsers, IconX, IconCheck, IconDownload, IconGlobe,
 } from "../../components/Icons";
+import { LanguageMenuItems } from "../../components/LanguageSwitcher";
+import { tEnum, useT } from "../../i18n";
+import type { MsgKey } from "../../i18n";
+import { useInstallPrompt } from "../../lib/pwa";
 import { useToast } from "../../components/Toast";
 import { Badge, Button, Input, Modal, Spinner } from "../../components/ui";
 import { initials, timeAgo } from "../../lib/format";
 
-const NAV = [
-  { to: "/app", label: "Overview", icon: IconDashboard, end: true },
-  { to: "/app/map", label: "Live map", icon: IconMap },
-  { to: "/app/assets", label: "Forests & assets", icon: IconTree },
-  { to: "/app/alerts", label: "Alerts", icon: IconBell },
-  { to: "/app/integrations", label: "Integrations", icon: IconPlug },
-  { to: "/app/data", label: "Data", icon: IconDatabase },
+const NAV: { to: string; label: MsgKey; icon: typeof IconMap; end?: boolean }[] = [
+  { to: "/app", label: "nav.overview", icon: IconDashboard, end: true },
+  { to: "/app/map", label: "nav.map", icon: IconMap },
+  { to: "/app/assets", label: "nav.assets", icon: IconTree },
+  { to: "/app/alerts", label: "nav.alerts", icon: IconBell },
+  { to: "/app/integrations", label: "nav.integrations", icon: IconPlug },
+  { to: "/app/data", label: "nav.data", icon: IconDatabase },
 ];
-const SETTINGS = [
-  { to: "/app/settings/profile", label: "Profile", icon: IconUser, needsUser: true },
-  { to: "/app/settings/organization", label: "Organisation", icon: IconBuilding },
-  { to: "/app/settings/team", label: "Team", icon: IconUsers },
-  { to: "/app/settings/api-keys", label: "API keys", icon: IconKey, needsUser: true },
+const SETTINGS: { to: string; label: MsgKey; icon: typeof IconMap; needsUser?: boolean }[] = [
+  { to: "/app/settings/profile", label: "nav.profile", icon: IconUser, needsUser: true },
+  { to: "/app/settings/notifications", label: "nav.notifications", icon: IconBell, needsUser: true },
+  { to: "/app/settings/organization", label: "nav.organization", icon: IconBuilding },
+  { to: "/app/settings/team", label: "nav.team", icon: IconUsers },
+  { to: "/app/settings/api-keys", label: "nav.apiKeys", icon: IconKey, needsUser: true },
 ];
 
 function useClickOutside(open: boolean, close: () => void, cls: string) {
@@ -45,6 +50,7 @@ function useClickOutside(open: boolean, close: () => void, cls: string) {
 function OrgSwitcher() {
   const { me, switchOrg } = useAuth();
   const toast = useToast();
+  const { t } = useT();
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
@@ -59,13 +65,13 @@ function OrgSwitcher() {
         <span className="org-mark">{initials(me.org.name)}</span>
         <span className="truncate">
           <span className="org-name truncate">{me.org.name}</span>
-          <span className="org-plan">{me.org.limits?.label ?? me.org.plan} plan</span>
+          <span className="org-plan">{t("shell.plan", { plan: me.org.limits?.label ?? me.org.plan })}</span>
         </span>
         {canSwitch && <IconChevronDown />}
       </button>
       {open && (
         <div className="menu" role="menu" style={{ left: 0, right: "auto", minWidth: 260 }}>
-          <div className="menu-label">Organisations</div>
+          <div className="menu-label">{t("shell.orgs")}</div>
           {me.memberships.map((m) => (
             <button
               key={m.org_id}
@@ -75,14 +81,14 @@ function OrgSwitcher() {
                 setOpen(false);
                 if (m.org_id !== me.org!.id) {
                   await switchOrg(m.org_id);
-                  toast.success(`Switched to ${m.org_name}`);
+                  toast.success(t("shell.switched", { org: m.org_name }));
                   navigate("/app");
                 }
               }}
             >
               <span className="org-mark sm">{initials(m.org_name)}</span>
               <span className="grow truncate">{m.org_name}</span>
-              <span className="tiny muted">{m.role}</span>
+              <span className="tiny muted">{tEnum("role", m.role)}</span>
               {m.org_id === me.org!.id && <IconCheck size={14} className="ok-text" />}
             </button>
           ))}
@@ -95,18 +101,18 @@ function OrgSwitcher() {
               setCreating(true);
             }}
           >
-            <IconPlus /> New organisation
+            <IconPlus /> {t("shell.newOrg")}
           </button>
         </div>
       )}
       <Modal
         open={creating}
         onClose={() => setCreating(false)}
-        title="New organisation"
-        description="Organisations keep assets, alerts, integrations and team members separate. You'll be its owner."
+        title={t("shell.newOrg")}
+        description={t("shell.newOrgDesc")}
         footer={
           <>
-            <Button onClick={() => setCreating(false)}>Cancel</Button>
+            <Button onClick={() => setCreating(false)}>{t("common.cancel")}</Button>
             <Button
               variant="primary"
               loading={busy}
@@ -118,7 +124,7 @@ function OrgSwitcher() {
                   setCreating(false);
                   setName("");
                   await switchOrg(o.id);
-                  toast.success(`Created ${o.name}`);
+                  toast.success(t("shell.created", { org: o.name }));
                   navigate("/app");
                 } catch (err) {
                   toast.error(err);
@@ -127,12 +133,12 @@ function OrgSwitcher() {
                 }
               }}
             >
-              Create organisation
+              {t("shell.createOrg")}
             </Button>
           </>
         }
       >
-        <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Sierra Fire Brigade" autoFocus />
+        <Input label={t("common.name")} value={name} onChange={(e) => setName(e.target.value)} placeholder={t("shell.orgPlaceholder")} autoFocus />
       </Modal>
     </div>
   );
@@ -140,18 +146,30 @@ function OrgSwitcher() {
 
 function UserMenu() {
   const { me, signOut } = useAuth();
+  const { t } = useT();
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
+  const install = useInstallPrompt();
   useClickOutside(open, () => setOpen(false), "user-menu");
   if (!me?.authenticated || !me.user) {
     return (
       <div className="row">
+        <div className="user-menu">
+          <button className="btn sm ghost icon" onClick={() => setOpen((v) => !v)} aria-haspopup="menu" aria-expanded={open} aria-label={t("common.language")} title={t("common.language")}>
+            <IconGlobe />
+          </button>
+          {open && (
+            <div className="menu" role="menu">
+              <LanguageMenuItems onDone={() => setOpen(false)} />
+            </div>
+          )}
+        </div>
         <Link className="btn sm ghost" to="/login">
-          Sign in
+          {t("common.signIn")}
         </Link>
         {me?.registration_open && (
           <Link className="btn sm primary hide-sm" to="/register">
-            Create account
+            {t("common.createAccount")}
           </Link>
         )}
       </div>
@@ -160,7 +178,7 @@ function UserMenu() {
   const u = me.user;
   return (
     <div className="user-menu">
-      <button className="user-btn" onClick={() => setOpen((v) => !v)} aria-haspopup="menu" aria-expanded={open} aria-label="Account menu">
+      <button className="user-btn" onClick={() => setOpen((v) => !v)} aria-haspopup="menu" aria-expanded={open} aria-label={t("shell.accountMenu")}>
         <span className="avatar">{initials(u.name || u.email)}</span>
       </button>
       {open && (
@@ -169,20 +187,34 @@ function UserMenu() {
             <div className="strong truncate">{u.name || u.email}</div>
             <div className="small muted truncate">{u.email}</div>
             <div className="mt-4">
-              <Badge>{me.role}</Badge> {u.is_superuser && <Badge kind="accent">superuser</Badge>}
+              <Badge>{tEnum("role", me.role)}</Badge> {u.is_superuser && <Badge kind="accent">{t("shell.superuser")}</Badge>}
             </div>
           </div>
           <div className="menu-sep" />
           {SETTINGS.map((s) => (
             <button key={s.to} role="menuitem" className="menu-item" onClick={() => (setOpen(false), navigate(s.to))}>
-              <s.icon /> {s.label}
+              <s.icon /> {t(s.label)}
             </button>
           ))}
           {u.is_superuser && (
             <button role="menuitem" className="menu-item" onClick={() => (setOpen(false), navigate("/app/admin"))}>
-              <IconShield /> Platform admin
+              <IconShield /> {t("nav.admin")}
             </button>
           )}
+          {install && (
+            <button
+              role="menuitem"
+              className="menu-item"
+              onClick={async () => {
+                setOpen(false);
+                await install();
+              }}
+            >
+              <IconDownload /> {t("shell.installApp")}
+            </button>
+          )}
+          <div className="menu-sep" />
+          <LanguageMenuItems onDone={() => setOpen(false)} />
           <div className="menu-sep" />
           <button
             role="menuitem"
@@ -193,7 +225,7 @@ function UserMenu() {
               navigate(me.auth_required ? "/login" : "/app");
             }}
           >
-            <IconLogout /> Sign out
+            <IconLogout /> {t("common.signOut")}
           </button>
         </div>
       )}
@@ -204,6 +236,7 @@ function UserMenu() {
 function VerifyBanner() {
   const { me } = useAuth();
   const toast = useToast();
+  const { t } = useT();
   const [busy, setBusy] = useState(false);
   const [link, setLink] = useState<string | null>(null);
   const [hidden, setHidden] = useState(false);
@@ -211,11 +244,11 @@ function VerifyBanner() {
   return (
     <div className="banner warn" role="status">
       <span className="grow">
-        Please confirm your e-mail address <b>{me.user.email}</b>
-        {me.require_email_verification ? " to receive alerts and invite your team." : "."}{" "}
+        {t("shell.verify.prefix")} <b>{me.user.email}</b>
+        {me.require_email_verification ? ` ${t("shell.verify.suffix")}` : "."}{" "}
         {link && (
           <>
-            Dev link: <a href={link}>{link}</a>
+            {t("common.devLink")} <a href={link}>{link}</a>
           </>
         )}
       </span>
@@ -226,8 +259,8 @@ function VerifyBanner() {
           setBusy(true);
           try {
             const r = await authApi.resendVerification();
-            if (r.already_verified) toast.success("Your e-mail is already confirmed.");
-            else toast.success(r.emailed ? "Confirmation e-mail sent." : "Confirmation link created (e-mail is not configured on this server).");
+            if (r.already_verified) toast.success(t("shell.verify.already"));
+            else toast.success(r.emailed ? t("shell.verify.sent") : t("shell.verify.created"));
             if (r.dev_link) setLink(r.dev_link);
           } catch (err) {
             toast.error(err);
@@ -236,9 +269,9 @@ function VerifyBanner() {
           }
         }}
       >
-        Resend e-mail
+        {t("shell.verify.resend")}
       </Button>
-      <button className="close-btn" aria-label="Dismiss" onClick={() => setHidden(true)}>
+      <button className="close-btn" aria-label={t("common.dismiss")} onClick={() => setHidden(true)}>
         <IconX size={14} />
       </button>
     </div>
@@ -253,6 +286,7 @@ export default function Shell() {
   const loc = useLocation();
   const mainRef = useRef<HTMLElement>(null);
   const toast = useToast();
+  const { t } = useT();
 
   useEffect(() => setNavOpen(false), [loc.pathname]);
 
@@ -281,8 +315,8 @@ export default function Shell() {
 
   useEffect(() => {
     const p = new URLSearchParams(loc.search).get("billing");
-    if (p === "success") toast.success("Thanks! Your plan is being updated; it can take a few seconds to show.");
-    if (p === "cancelled") toast.show("Checkout cancelled. Your plan hasn't changed.", "info");
+    if (p === "success") toast.success(t("shell.billing.success"));
+    if (p === "cancelled") toast.show(t("shell.billing.cancelled"), "info");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -291,7 +325,7 @@ export default function Shell() {
 
   return (
     <div className={`shell ${navOpen ? "nav-open" : ""}`}>
-      <aside className="sidebar" aria-label="Main navigation">
+      <aside className="sidebar" aria-label={t("shell.mainNav")}>
         <div className="sidebar-brand">
           <Link to="/app" className="brand">
             <span className="logo">
@@ -299,7 +333,7 @@ export default function Shell() {
             </span>
             Firealerts
           </Link>
-          <button className="close-btn show-sm" onClick={() => setNavOpen(false)} aria-label="Close navigation">
+          <button className="close-btn show-sm" onClick={() => setNavOpen(false)} aria-label={t("shell.closeNav")}>
             <IconX />
           </button>
         </div>
@@ -307,21 +341,21 @@ export default function Shell() {
           {NAV.map((n) => (
             <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}>
               <n.icon />
-              <span className="grow">{n.label}</span>
+              <span className="grow">{t(n.label)}</span>
               {n.to === "/app/alerts" && openAlerts ? <span className="nav-count">{openAlerts > 99 ? "99+" : openAlerts}</span> : null}
             </NavLink>
           ))}
-          <div className="nav-section">Settings</div>
+          <div className="nav-section">{t("nav.settings")}</div>
           {SETTINGS.filter((s) => !s.needsUser || me?.authenticated).map((n) => (
             <NavLink key={n.to} to={n.to} className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}>
               <n.icon />
-              <span className="grow">{n.label}</span>
+              <span className="grow">{t(n.label)}</span>
             </NavLink>
           ))}
           {me?.user?.is_superuser && (
             <NavLink to="/app/admin" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}>
               <IconShield />
-              <span className="grow">Platform admin</span>
+              <span className="grow">{t("nav.admin")}</span>
             </NavLink>
           )}
         </nav>
@@ -330,30 +364,30 @@ export default function Shell() {
             <div className="feed-status">
               <span className={`status-dot ${status.runs[0]?.errors?.length ? "warn" : "ok"}`} />
               <span className="grow">
-                <span className="small">{mode === "live" ? "Live feeds" : mode === "demo" ? "Demo data" : "Feeds"}</span>
+                <span className="small">{mode === "live" ? t("shell.feeds.live") : mode === "demo" ? t("shell.feeds.demo") : t("shell.feeds.other")}</span>
                 <span className="tiny muted" style={{ display: "block" }}>
-                  Synced {timeAgo(status.runs[0]?.finished_at)}
+                  {t("shell.synced", { ago: timeAgo(status.runs[0]?.finished_at) })}
                 </span>
               </span>
             </div>
           )}
-          {!me?.authenticated && !me?.auth_required && <div className="tiny muted" style={{ padding: "8px 12px 0" }}>Single-user mode: no sign-in required.</div>}
+          {!me?.authenticated && !me?.auth_required && <div className="tiny muted" style={{ padding: "8px 12px 0" }}>{t("shell.singleUser")}</div>}
         </div>
       </aside>
       <div className="scrim" onClick={() => setNavOpen(false)} aria-hidden="true" />
       <div className="main-col">
         <header className="topbar">
-          <button className="btn icon ghost show-sm" onClick={() => setNavOpen(true)} aria-label="Open navigation">
+          <button className="btn icon ghost show-sm" onClick={() => setNavOpen(true)} aria-label={t("shell.openNav")}>
             <IconMenu />
           </button>
           <OrgSwitcher />
           <div className="grow" />
           {mode && (
-            <Badge kind={mode === "live" ? "live" : "warn"} title={mode === "demo" ? "Synthetic demo fires (DATA_MODE=demo or feeds unreachable)" : "Live satellite feeds"} dot>
-              {mode === "live" ? "LIVE" : mode.toUpperCase()}
+            <Badge kind={mode === "live" ? "live" : "warn"} title={mode === "demo" ? t("shell.demoTitle") : t("shell.liveTitle")} dot>
+              {mode === "live" ? t("shell.live") : mode === "demo" ? t("shell.demo") : mode.toUpperCase()}
             </Badge>
           )}
-          <Link to="/app/alerts?status=open" className="bell" aria-label={`Alerts${openAlerts ? `: ${openAlerts} open` : ""}`} title="Open alerts">
+          <Link to="/app/alerts?status=open" className="bell" aria-label={openAlerts ? t("shell.bellCount", { count: openAlerts }) : t("nav.alerts")} title={t("shell.openAlerts")}>
             <IconBell size={18} />
             {openAlerts ? <span className="bell-count">{openAlerts > 99 ? "99+" : openAlerts}</span> : null}
           </Link>
@@ -361,9 +395,9 @@ export default function Shell() {
         </header>
         {sessionExpired && !me?.authenticated && (
           <div className="banner bad">
-            <span className="grow">Your session has expired.</span>
+            <span className="grow">{t("shell.expired")}</span>
             <Link className="btn sm" to={`/login?next=${encodeURIComponent(loc.pathname)}`}>
-              Sign in again
+              {t("shell.signInAgain")}
             </Link>
           </div>
         )}

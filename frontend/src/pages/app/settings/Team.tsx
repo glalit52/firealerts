@@ -6,18 +6,13 @@ import { useAuth } from "../../../auth/AuthContext";
 import { IconTrash } from "../../../components/Icons";
 import { useToast } from "../../../components/Toast";
 import { Badge, Button, Card, CopyButton, ErrorState, Input, Loading, Notice, Select, useConfirm } from "../../../components/ui";
-import { fmtDateTime, humanize, initials, timeAgo } from "../../../lib/format";
+import { fmtDateTime, initials, timeAgo } from "../../../lib/format";
 import { useAsync, useDocumentTitle } from "../../../lib/useAsync";
-
-const ROLE_HELP: Record<Role, string> = {
-  viewer: "See the map, assets and alerts",
-  member: "Also create assets and handle alerts",
-  admin: "Also manage integrations, invites and settings",
-  owner: "Full control incl. plan, roles and deletion",
-};
+import { tEnum, useT } from "../../../i18n";
 
 export default function Team() {
-  useDocumentTitle("Team");
+  const { t } = useT();
+  useDocumentTitle(t("nav.team"));
   const { me, can, refresh } = useAuth();
   const toast = useToast();
   const { confirm, dialog } = useConfirm();
@@ -52,7 +47,7 @@ export default function Team() {
   const changeRole = async (m: Member, r: Role) => {
     try {
       await orgs.setRole(m.user_id, r);
-      toast.success(`${m.name || m.email} is now ${r}.`);
+      toast.success(t("team.roleSet", { name: m.name || m.email, role: tEnum("role", r) }));
       void team.reload();
       if (m.user_id === myId) void refresh();
     } catch (err) {
@@ -63,7 +58,7 @@ export default function Team() {
 
   const removeMember = async (m: Member) => {
     const self = m.user_id === myId;
-    if (!(await confirm({ title: self ? `Leave ${me?.org?.name}?` : `Remove ${m.name || m.email}?`, body: self ? "You'll lose access to this organisation." : "They'll lose access to this organisation immediately.", confirmLabel: self ? "Leave" : "Remove", danger: true }))) return;
+    if (!(await confirm({ title: self ? t("team.leaveTitle", { org: me?.org?.name ?? "" }) : t("team.removeTitle", { name: m.name || m.email }), body: self ? t("team.leaveBody") : t("team.removeBody"), confirmLabel: self ? t("team.leave") : t("common.remove"), danger: true }))) return;
     try {
       await orgs.removeMember(m.user_id);
       if (self) {
@@ -80,33 +75,33 @@ export default function Team() {
     <div className="page">
       <div className="page-head">
         <div>
-          <h1>Team</h1>
-          <p>People with access to {me?.org?.name}. Roles: viewer &lt; member &lt; admin &lt; owner.</p>
+          <h1>{t("nav.team")}</h1>
+          <p>{t("team.lead", { org: me?.org?.name ?? "" })}</p>
         </div>
       </div>
       <div className="settings-layout">
         {admin && me?.authenticated && (
-          <Card title="Invite someone" sub="Invites are valid for 14 days and must be accepted with the invited e-mail address.">
+          <Card title={t("team.invite")} sub={t("team.inviteSub")}>
             <form onSubmit={sendInvite} className="row wrap" style={{ alignItems: "flex-end" }}>
-              <Input fieldClassName="grow" label="E-mail" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="colleague@example.com" />
-              <Select label="Role" value={role} onChange={(e) => setRole(e.target.value as Role)} style={{ width: 150 }}>
+              <Input fieldClassName="grow" label={t("common.email")} type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t("team.emailPh")} />
+              <Select label={t("team.role")} value={role} onChange={(e) => setRole(e.target.value as Role)} style={{ width: 150 }}>
                 {roles
                   .filter((r) => owner || r !== "owner")
                   .map((r) => (
                     <option key={r} value={r}>
-                      {humanize(r)}
+                      {tEnum("roleName", r)}
                     </option>
                   ))}
               </Select>
               <Button type="submit" variant="primary" loading={busy}>
-                Create invite
+                {t("team.createInvite")}
               </Button>
             </form>
-            <div className="tiny muted mt-8">{ROLE_HELP[role]}.</div>
+            <div className="tiny muted mt-8">{t(`team.help.${role}`)}.</div>
             {invite && (
               <div className="stack tight mt-16">
-                <Notice kind="ok" title={invite.emailed ? `Invite e-mailed to ${invite.email}` : `Invite created for ${invite.email}`}>
-                  {invite.emailed ? "You can also share this link directly:" : "E-mail isn't configured, so share this link with them (valid 14 days):"}
+                <Notice kind="ok" title={invite.emailed ? t("team.emailed", { email: invite.email }) : t("team.createdFor", { email: invite.email })}>
+                  {invite.emailed ? t("team.shareToo") : t("team.shareOnly")}
                 </Notice>
                 <div className="row">
                   <div className="secret-box grow">{invite.invite_url}</div>
@@ -116,9 +111,9 @@ export default function Team() {
             )}
           </Card>
         )}
-        {admin && !me?.authenticated && <Notice kind="info">Sign in with an account to invite team members.</Notice>}
+        {admin && !me?.authenticated && <Notice kind="info">{t("team.signInToInvite")}</Notice>}
 
-        <Card title="Members" flush>
+        <Card title={t("admin.members")} flush>
           {team.error ? (
             <div className="card-body"><ErrorState error={team.error} onRetry={team.reload} /></div>
           ) : !team.data ? (
@@ -128,10 +123,10 @@ export default function Team() {
               <table className="table">
                 <thead>
                   <tr>
-                    <th>Member</th>
-                    <th>Role</th>
-                    <th>Joined</th>
-                    <th>Last sign-in</th>
+                    <th>{t("roleName.member")}</th>
+                    <th>{t("team.role")}</th>
+                    <th>{t("team.joined")}</th>
+                    <th>{t("admin.lastSignIn")}</th>
                     <th />
                   </tr>
                 </thead>
@@ -145,7 +140,7 @@ export default function Team() {
                             <span className="avatar">{initials(m.name || m.email)}</span>
                             <div style={{ minWidth: 0 }}>
                               <div className="strong truncate">
-                                {m.name || m.email} {m.user_id === myId && <Badge>you</Badge>}
+                                {m.name || m.email} {m.user_id === myId && <Badge>{t("common.you")}</Badge>}
                               </div>
                               <div className="tiny muted truncate">{m.email}</div>
                             </div>
@@ -153,23 +148,23 @@ export default function Team() {
                         </td>
                         <td>
                           {owner && !lastOwner ? (
-                            <Select inputSize="sm" value={m.role} onChange={(e) => changeRole(m, e.target.value as Role)} aria-label={`Role of ${m.email}`} style={{ width: 120 }}>
+                            <Select inputSize="sm" value={m.role} onChange={(e) => changeRole(m, e.target.value as Role)} aria-label={t("team.roleOf", { email: m.email })} style={{ width: 120 }}>
                               {roles.map((r) => (
                                 <option key={r} value={r}>
-                                  {humanize(r)}
+                                  {tEnum("roleName", r)}
                                 </option>
                               ))}
                             </Select>
                           ) : (
-                            <Badge kind={m.role === "owner" ? "accent" : undefined}>{m.role}</Badge>
+                            <Badge kind={m.role === "owner" ? "accent" : undefined}>{tEnum("role", m.role)}</Badge>
                           )}
                         </td>
                         <td className="small">{fmtDateTime(m.joined_at)}</td>
-                        <td className="small muted">{m.last_login_at ? timeAgo(m.last_login_at) : "never"}</td>
+                        <td className="small muted">{m.last_login_at ? timeAgo(m.last_login_at) : t("common.never")}</td>
                         <td className="actions">
                           {(admin || m.user_id === myId) && !lastOwner && !(m.role === "owner" && !owner) && (
                             <Button size="sm" variant="ghost" onClick={() => removeMember(m)}>
-                              {m.user_id === myId ? "Leave" : "Remove"}
+                              {m.user_id === myId ? t("team.leave") : t("common.remove")}
                             </Button>
                           )}
                         </td>
@@ -183,14 +178,14 @@ export default function Team() {
         </Card>
 
         {team.data && team.data.pending_invites.length > 0 && (
-          <Card title="Pending invites" flush>
+          <Card title={t("team.pending")} flush>
             <div className="table-wrap">
               <table className="table">
                 <thead>
                   <tr>
-                    <th>E-mail</th>
-                    <th>Role</th>
-                    <th>Sent</th>
+                    <th>{t("common.email")}</th>
+                    <th>{t("team.role")}</th>
+                    <th>{t("team.sent")}</th>
                     <th />
                   </tr>
                 </thead>
@@ -198,7 +193,7 @@ export default function Team() {
                   {team.data.pending_invites.map((i) => (
                     <tr key={i.id}>
                       <td>{i.email}</td>
-                      <td><Badge>{i.role}</Badge></td>
+                      <td><Badge>{tEnum("role", i.role)}</Badge></td>
                       <td className="small muted">{timeAgo(i.created_at)}</td>
                       <td className="actions">
                         {admin && (
@@ -210,7 +205,7 @@ export default function Team() {
                               toast.error(err);
                             }
                           }}>
-                            Revoke
+                            {t("keys.revoke")}
                           </Button>
                         )}
                       </td>
@@ -223,29 +218,29 @@ export default function Team() {
         )}
 
         {admin && (
-          <Card title="Audit log" sub="Recent changes in this organisation" flush>
+          <Card title={t("team.audit")} sub={t("team.auditSub")} flush>
             {audit.error ? (
               <div className="card-body"><ErrorState error={audit.error} onRetry={audit.reload} /></div>
             ) : !audit.data ? (
               <Loading />
             ) : audit.data.length === 0 ? (
-              <div className="card-body small muted">No activity yet.</div>
+              <div className="card-body small muted">{t("team.noActivity")}</div>
             ) : (
               <div className="table-wrap" style={{ maxHeight: 420, overflowY: "auto" }}>
                 <table className="table compact">
                   <thead>
                     <tr>
-                      <th>When</th>
-                      <th>Who</th>
-                      <th>Action</th>
-                      <th>Target</th>
+                      <th>{t("team.when")}</th>
+                      <th>{t("team.who")}</th>
+                      <th>{t("team.action")}</th>
+                      <th>{t("team.target")}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {audit.data.map((e) => (
                       <tr key={e.id}>
                         <td className="small nowrap" title={fmtDateTime(e.created_at)}>{timeAgo(e.created_at)}</td>
-                        <td className="small">{e.user_email ?? (e.user_id ? `#${e.user_id}` : "system")}</td>
+                        <td className="small">{e.user_email ?? (e.user_id ? `#${e.user_id}` : t("common.system"))}</td>
                         <td><span className="mono tiny">{e.action}</span></td>
                         <td className="small truncate" style={{ maxWidth: 260 }}>
                           {e.target}

@@ -4,13 +4,15 @@ import { useNavigate } from "react-router-dom";
 import { auth } from "../../../api/endpoints";
 import { useAuth } from "../../../auth/AuthContext";
 import { useToast } from "../../../components/Toast";
-import { Badge, Button, Card, EmptyState, Input, Modal, Notice } from "../../../components/ui";
+import { Badge, Button, Card, EmptyState, Input, Modal, Notice, Select } from "../../../components/ui";
 import { fmtDate, initials } from "../../../lib/format";
 import { useDocumentTitle } from "../../../lib/useAsync";
+import { LOCALES, LOCALE_NAMES, isLocale, useT } from "../../../i18n";
 
 export default function Profile() {
-  useDocumentTitle("Profile");
-  const { me, refresh, signOut } = useAuth();
+  const { t, locale } = useT();
+  useDocumentTitle(t("nav.profile"));
+  const { me, refresh, signOut, setLanguage } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
   const user = me?.user;
@@ -27,8 +29,8 @@ export default function Profile() {
     return (
       <div className="page">
         <Card>
-          <EmptyState title="You're not signed in" action={<Button variant="primary" onClick={() => navigate("/login?next=/app/settings/profile")}>Sign in</Button>}>
-            This server runs in single-user mode. Sign in or create an account to manage a personal profile.
+          <EmptyState title={t("profile.notSignedIn")} action={<Button variant="primary" onClick={() => navigate("/login?next=/app/settings/profile")}>{t("common.signIn")}</Button>}>
+            {t("profile.singleUser")}
           </EmptyState>
         </Card>
       </div>
@@ -40,7 +42,7 @@ export default function Profile() {
     try {
       await auth.updateMe({ name });
       await refresh();
-      toast.success("Profile saved.");
+      toast.success(t("profile.saved"));
     } catch (err) {
       toast.error(err);
     } finally {
@@ -50,14 +52,14 @@ export default function Profile() {
 
   const changePw = async (e: FormEvent) => {
     e.preventDefault();
-    if (pw.next.length < 8) return setPwErr("Use at least 8 characters.");
-    if (pw.next !== pw.repeat) return setPwErr("The new passwords don't match.");
+    if (pw.next.length < 8) return setPwErr(t("auth.pwMin"));
+    if (pw.next !== pw.repeat) return setPwErr(t("profile.pwMismatch"));
     setSavingPw(true);
     setPwErr(null);
     try {
       await auth.changePassword(pw.current, pw.next);
       setPw({ current: "", next: "", repeat: "" });
-      toast.success("Password changed. Your other sessions were signed out.");
+      toast.success(t("profile.pwChanged"));
     } catch (err) {
       setPwErr((err as Error).message);
     } finally {
@@ -70,7 +72,7 @@ export default function Profile() {
     try {
       await auth.deleteMe();
       await signOut();
-      toast.success("Your account was deleted.");
+      toast.success(t("profile.deleted"));
       navigate("/");
     } catch (err) {
       toast.error(err);
@@ -83,50 +85,59 @@ export default function Profile() {
     <div className="page">
       <div className="page-head">
         <div>
-          <h1>Profile</h1>
-          <p>Your personal account. Organisation settings are separate.</p>
+          <h1>{t("nav.profile")}</h1>
+          <p>{t("profile.lead")}</p>
         </div>
       </div>
       <div className="settings-layout">
-        <Card title="Account">
+        <Card title={t("auth.invite.account")}>
           <div className="row mb-16">
             <span className="avatar lg">{initials(user.name || user.email)}</span>
             <div>
               <div className="strong">{user.email}</div>
               <div className="small muted row wrap" style={{ gap: 6 }}>
-                Member since {fmtDate(user.created_at)}
-                {user.email_verified ? <Badge kind="ok">Verified</Badge> : <Badge kind="warn">Unverified</Badge>}
-                {user.is_superuser && <Badge kind="accent">Superuser</Badge>}
+                {t("profile.since", { date: fmtDate(user.created_at) })}
+                {user.email_verified ? <Badge kind="ok">{t("profile.verified")}</Badge> : <Badge kind="warn">{t("profile.unverified")}</Badge>}
+                {user.is_superuser && <Badge kind="accent">{t("profile.superuser")}</Badge>}
               </div>
             </div>
           </div>
           <form onSubmit={saveName} className="row top wrap" style={{ alignItems: "flex-end" }}>
-            <Input fieldClassName="grow" label="Display name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} />
+            <Input fieldClassName="grow" label={t("profile.displayName")} value={name} onChange={(e) => setName(e.target.value)} maxLength={120} />
             <Button type="submit" variant="primary" loading={savingName} disabled={name === user.name}>
-              Save
+              {t("common.save")}
             </Button>
           </form>
+          <div className="mt-16" style={{ maxWidth: 320 }}>
+            <Select
+              label={t("profile.language")}
+              hint={t("profile.languageHint")}
+              value={locale}
+              onChange={(e) => isLocale(e.target.value) && void setLanguage(e.target.value)}
+              options={LOCALES.map((l) => ({ value: l, label: LOCALE_NAMES[l] }))}
+            />
+          </div>
         </Card>
-        <Card title="Change password" sub="Other sessions are signed out when you change it.">
+        <Card title={t("profile.changePw")} sub={t("profile.changePwSub")}>
           <form onSubmit={changePw} className="form-grid">
-            <Input fieldClassName="full" label="Current password" type="password" autoComplete="current-password" required value={pw.current} onChange={(e) => setPw({ ...pw, current: e.target.value })} />
-            <Input label="New password" type="password" autoComplete="new-password" required minLength={8} value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} />
-            <Input label="Repeat new password" type="password" autoComplete="new-password" required value={pw.repeat} onChange={(e) => setPw({ ...pw, repeat: e.target.value })} />
+            <Input fieldClassName="full" label={t("profile.currentPw")} type="password" autoComplete="current-password" required value={pw.current} onChange={(e) => setPw({ ...pw, current: e.target.value })} />
+            <Input label={t("auth.newPassword")} type="password" autoComplete="new-password" required minLength={8} value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} />
+            <Input label={t("profile.repeatPw")} type="password" autoComplete="new-password" required value={pw.repeat} onChange={(e) => setPw({ ...pw, repeat: e.target.value })} />
             {pwErr && <div className="form-error full">{pwErr}</div>}
             <div className="full">
               <Button type="submit" variant="primary" loading={savingPw}>
-                Change password
+                {t("profile.changePw")}
               </Button>
             </div>
           </form>
         </Card>
-        <Card title="Danger zone">
+        <Card title={t("profile.danger")}>
           <div className="row between wrap">
             <div className="small muted" style={{ maxWidth: 520 }}>
-              Delete your account and personal API keys. Organisations where you're the only member are deleted too; if you're the only owner of a shared organisation, transfer ownership first.
+              {t("profile.deleteLead")}
             </div>
             <Button variant="danger" onClick={() => setDeleting(true)}>
-              Delete account
+              {t("profile.deleteAccount")}
             </Button>
           </div>
         </Card>
@@ -134,20 +145,20 @@ export default function Profile() {
       <Modal
         open={deleting}
         onClose={() => setDeleting(false)}
-        title="Delete your account?"
-        description="This can't be undone."
+        title={t("profile.deleteTitle")}
+        description={t("profile.cantUndo")}
         footer={
           <>
-            <Button onClick={() => setDeleting(false)}>Cancel</Button>
+            <Button onClick={() => setDeleting(false)}>{t("common.cancel")}</Button>
             <Button variant="danger" loading={delBusy} disabled={confirmText !== user.email} onClick={deleteAccount}>
-              Delete my account
+              {t("profile.deleteMine")}
             </Button>
           </>
         }
       >
         <div className="stack">
-          <Notice kind="bad">All organisations where you are the only member, with their assets and alerts, will be permanently deleted.</Notice>
-          <Input label={<>Type <b>{user.email}</b> to confirm</>} value={confirmText} onChange={(e) => setConfirmText(e.target.value)} autoComplete="off" />
+          <Notice kind="bad">{t("profile.deleteWarn")}</Notice>
+          <Input label={<>{t("confirm.typePre")} <b>{user.email}</b> {t("confirm.typePost")}</>} value={confirmText} onChange={(e) => setConfirmText(e.target.value)} autoComplete="off" />
         </div>
       </Modal>
     </div>

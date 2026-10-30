@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 /* A small, robust draw tool: click to add vertices (polygon) or centre + radius (circle).
  * The geometry logic is pure (and unit-tested); DrawController binds it to a MapLibre map. */
 import type { GeoJSONSource, Map as MlMap, MapMouseEvent } from "maplibre-gl";
@@ -39,9 +40,9 @@ export type DrawResult = { ok: true; polygon: Polygon; areaHa: number; center?: 
 /** Validate the current drawing and produce a polygon. */
 export function drawResult(s: DrawState): DrawResult {
   if (s.mode === "polygon") return polygonFromVertices(s.vertices);
-  if (!s.center) return { ok: false, reason: "Click the map to place the centre." };
-  if (!s.radiusKm) return { ok: false, reason: "Click again (or enter a radius) to set the size." };
-  if (s.radiusKm > 200) return { ok: false, reason: "The radius can be at most 200 km." };
+  if (!s.center) return { ok: false, reason: t("draw.placeCentre") };
+  if (!s.radiusKm) return { ok: false, reason: t("draw.setRadius") };
+  if (s.radiusKm > 200) return { ok: false, reason: t("draw.maxRadius") };
   const polygon = circlePolygon(s.center, s.radiusKm);
   return { ok: true, polygon, areaHa: Math.PI * (s.radiusKm * 1000) ** 2 / 10_000, center: s.center, radiusKm: s.radiusKm };
 }
