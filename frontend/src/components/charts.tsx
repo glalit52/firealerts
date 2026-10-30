@@ -3,7 +3,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { DangerDay, HourlyBehaviour, RiskDay } from "../api/types";
 import { dangerInfo } from "../lib/constants";
-import { compass, fmtDate, fmtDay, fmtNum, fmtPct } from "../lib/format";
+import { compass, fmtDate, fmtDay, fmtDayMonth, fmtNum, fmtPct } from "../lib/format";
+import { formatDate, useT } from "../i18n";
 
 /** Measure an element's width (ResizeObserver). */
 export function useWidth<T extends HTMLElement>(initial = 600): [React.RefObject<T>, number] {
@@ -31,6 +32,7 @@ function niceMax(v: number): number {
 
 // ------------------------------------------------------------------ Sparkline
 export function Sparkline({ values, height = 40, color = "var(--accent)", label }: { values: number[]; height?: number; color?: string; label?: string }) {
+  const { t } = useT();
   const [ref, w] = useWidth<HTMLDivElement>(200);
   const max = Math.max(1, ...values);
   const n = values.length;
@@ -41,7 +43,7 @@ export function Sparkline({ values, height = 40, color = "var(--accent)", label 
   const gid = useMemo(() => `sg${Math.random().toString(36).slice(2, 8)}`, []);
   return (
     <div ref={ref} style={{ width: "100%" }}>
-      <svg className="chart" width={w} height={height} role="img" aria-label={label ?? "Trend"}>
+      <svg className="chart" width={w} height={height} role="img" aria-label={label ?? t("chart.trend")}>
         <defs>
           <linearGradient id={gid} x1="0" x2="0" y1="0" y2="1">
             <stop offset="0" stopColor={color} stopOpacity="0.35" />
@@ -168,7 +170,7 @@ export function LineChart({ series, height = 200, yMin, yMax, formatY = (v) => f
         {xs.map((s, i) =>
           labelIdx.has(i) ? (
             <text key={s} x={x(s)} y={height - 6} textAnchor="middle">
-              {new Date(t(s)).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+              {fmtDayMonth(new Date(t(s)))}
             </text>
           ) : null,
         )}
@@ -211,6 +213,7 @@ export function LineChart({ series, height = 200, yMin, yMax, formatY = (v) => f
 
 // ------------------------------------------------------------------ Fire danger & ignition forecast
 export function RiskChart({ days, height = 190 }: { days: RiskDay[]; height?: number }) {
+  const { t } = useT();
   const [ref, w] = useWidth<HTMLDivElement>();
   const [hover, setHover] = useState<number | null>(null);
   const P = { l: 34, r: 40, t: 12, b: 30 };
@@ -229,7 +232,7 @@ export function RiskChart({ days, height = 190 }: { days: RiskDay[]; height?: nu
     .join("");
   return (
     <div ref={ref} style={{ position: "relative" }} onMouseLeave={() => setHover(null)}>
-      <svg className="chart" width={w} height={height} role="img" aria-label="Fire Weather Index and ignition probability by day">
+      <svg className="chart" width={w} height={height} role="img" aria-label={t("chart.riskAria")}>
         {[0, 0.5, 1].map((f) => (
           <g key={f}>
             <line className="grid-line" x1={P.l} x2={w - P.r} y1={yF(maxFwi * f)} y2={yF(maxFwi * f)} strokeDasharray={f ? "2 3" : undefined} />
@@ -259,17 +262,17 @@ export function RiskChart({ days, height = 190 }: { days: RiskDay[]; height?: nu
       {hover != null && days[hover] && (
         <div className="chart-tooltip" style={{ left: x(hover), top: yF(days[hover]!.fwi) }}>
           <div className="small muted">
-            {fmtDate(days[hover]!.date)} {days[hover]!.forecast ? "· forecast" : "· observed"}
+            {fmtDate(days[hover]!.date)} · {days[hover]!.forecast ? t("chart.forecast") : t("chart.observed")}
           </div>
           <div className="small">
             FWI <b>{fmtNum(days[hover]!.fwi, 1)}</b> · {dangerInfo(days[hover]!.danger).label}
           </div>
           <div className="small">
-            Ignition probability <b>{fmtPct(days[hover]!.ignition_p, 1)}</b>
+            {t("chart.ignition")} <b>{fmtPct(days[hover]!.ignition_p, 1)}</b>
           </div>
           {days[hover]!.data?.temp != null && (
             <div className="small muted">
-              {fmtNum(Number(days[hover]!.data.temp), 0)}° · RH {fmtNum(Number(days[hover]!.data.rh))}% · wind {fmtNum(Number(days[hover]!.data.wind))} km/h
+              {t("chart.weatherLine", { temp: fmtNum(Number(days[hover]!.data.temp), 0), rh: fmtNum(Number(days[hover]!.data.rh)), wind: fmtNum(Number(days[hover]!.data.wind)) })}
             </div>
           )}
         </div>
@@ -277,11 +280,11 @@ export function RiskChart({ days, height = 190 }: { days: RiskDay[]; height?: nu
       <div className="legend mt-4">
         <span>
           <i style={{ background: "linear-gradient(90deg,#3ecf8e,#ffd84d,#ff9a3c,#ff4d4d,#a1124a)" }} />
-          FWI (bar colour = danger class; faded = observed)
+          {t("chart.fwiLegend")}
         </span>
         <span>
           <i style={{ background: "#5aa9ff", borderRadius: 99 }} />
-          Ignition probability
+          {t("chart.ignition")}
         </span>
       </div>
     </div>
@@ -290,6 +293,7 @@ export function RiskChart({ days, height = 190 }: { days: RiskDay[]; height?: nu
 
 // ------------------------------------------------------------------ Danger strip
 export function DangerStrip({ days, max = 10 }: { days: DangerDay[]; max?: number }) {
+  const { t } = useT();
   const show = days.slice(-max);
   return (
     <>
@@ -304,13 +308,14 @@ export function DangerStrip({ days, max = 10 }: { days: DangerDay[]; max?: numbe
           );
         })}
       </div>
-      <div className="tiny muted mt-4">Faded = observed, solid = forecast. Number = FWI.</div>
+      <div className="tiny muted mt-4">{t("chart.stripNote")}</div>
     </>
   );
 }
 
 // ------------------------------------------------------------------ Hourly fire behaviour
 export function HourlyChart({ hourly, height = 140 }: { hourly: HourlyBehaviour[]; height?: number }) {
+  const { t } = useT();
   const [ref, w] = useWidth<HTMLDivElement>(380);
   const P = { l: 30, r: 32, t: 10, b: 18 };
   const n = hourly.length;
@@ -325,11 +330,11 @@ export function HourlyChart({ hourly, height = 140 }: { hourly: HourlyBehaviour[
   const every = n > 36 ? 12 : 6;
   return (
     <div ref={ref}>
-      <svg className="chart" width={w} height={height} role="img" aria-label="Hourly rate of spread, wind and humidity">
+      <svg className="chart" width={w} height={height} role="img" aria-label={t("chart.hourlyAria")}>
         {hourly.map((h, i) => (
           <rect key={i} x={x(i) - bw / 2} y={yW(h.wind)} width={bw} height={height - P.b - yW(h.wind)} fill="#2b3446">
             <title>
-              {new Date(h.time).toLocaleString("en-GB", { weekday: "short", hour: "2-digit", minute: "2-digit" })} · wind {h.wind} km/h {compass(h.wind_dir)} · ROS {h.ros_m_min} m/min · RH {h.rh}%
+              {formatDate(new Date(h.time), { weekday: "short", hour: "2-digit", minute: "2-digit" })} · {t("chart.hourlyTip", { wind: h.wind, dir: compass(h.wind_dir), ros: h.ros_m_min, rh: h.rh })}
             </title>
           </rect>
         ))}
@@ -348,7 +353,7 @@ export function HourlyChart({ hourly, height = 140 }: { hourly: HourlyBehaviour[
         {hourly.map((h, i) =>
           i % every === 0 ? (
             <text key={i} x={x(i)} y={height - 4} textAnchor="middle">
-              {new Date(h.time).toLocaleTimeString("en-GB", { hour: "2-digit" })}h
+              {formatDate(new Date(h.time), { hour: "2-digit", hour12: false })}h
             </text>
           ) : null,
         )}
@@ -356,15 +361,15 @@ export function HourlyChart({ hourly, height = 140 }: { hourly: HourlyBehaviour[
       <div className="legend">
         <span>
           <i style={{ background: "#ff6a2b" }} />
-          Head ROS
+          {t("chart.headRos")}
         </span>
         <span>
           <i style={{ background: "#2b3446" }} />
-          Wind
+          {t("wind.layer")}
         </span>
         <span>
           <i style={{ background: "#5aa9ff" }} />
-          Rel. humidity
+          {t("fc.rh")}
         </span>
       </div>
     </div>

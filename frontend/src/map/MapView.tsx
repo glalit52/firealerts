@@ -7,6 +7,18 @@ import type { ReactNode } from "react";
 import { storage } from "../api/client";
 import { IconLayers } from "../components/Icons";
 import { BASEMAPS, DEFAULT_BASEMAP, buildStyle, imageryOverlays } from "./layers";
+import { hasKey, t as tr, useT } from "../i18n";
+
+/** An extra on/off layer offered in the switcher (e.g. wind). */
+export interface ExtraLayerToggle {
+  id: string;
+  label: string;
+  description?: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}
+
+const tl = (key: string, fallback: string) => (hasKey(key) ? tr(key) : fallback);
 
 export interface MapViewProps {
   center?: [number, number];
@@ -20,6 +32,8 @@ export interface MapViewProps {
   switcher?: "top-right" | "top-left" | false;
   ariaLabel?: string;
   interactive?: boolean;
+  /** Extra toggles shown in the layer switcher under "Weather & overlays". */
+  extraLayers?: ExtraLayerToggle[];
 }
 
 function parseHash(): { center: [number, number]; zoom: number } | null {
@@ -30,7 +44,8 @@ function parseHash(): { center: [number, number]; zoom: number } | null {
   return null;
 }
 
-export function MapView({ center = [-30, 5], zoom = 1.6, hash, onReady, children, className, switcher = "top-right", ariaLabel = "Map", interactive = true }: MapViewProps) {
+export function MapView({ center = [-30, 5], zoom = 1.6, hash, onReady, children, className, switcher = "top-right", ariaLabel, interactive = true, extraLayers }: MapViewProps) {
+  const { t } = useT();
   const el = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MlMap | null>(null);
   const onReadyRef = useRef(onReady);
@@ -57,7 +72,7 @@ export function MapView({ center = [-30, 5], zoom = 1.6, hash, onReady, children
         fadeDuration: 0,
       });
     } catch (err) {
-      setFailed((err as Error).message || "WebGL is not available in this browser.");
+      setFailed((err as Error).message || tr("map.noWebgl"));
       return;
     }
     mapRef.current = map;
@@ -128,40 +143,56 @@ export function MapView({ center = [-30, 5], zoom = 1.6, hash, onReady, children
 
   return (
     <div className={`map-box ${className ?? ""}`}>
-      <div ref={el} style={{ position: "absolute", inset: 0 }} role="region" aria-label={ariaLabel} />
+      <div ref={el} style={{ position: "absolute", inset: 0 }} role="region" aria-label={ariaLabel ?? t("map.aria")} />
       {failed && (
         <div className="loading-block" style={{ position: "absolute", inset: 0, flexDirection: "column" }}>
-          <b>Map unavailable</b>
+          <b>{t("map.unavailable")}</b>
           <span className="small">{failed}</span>
         </div>
       )}
       {switcher && (
         <div className="layer-switcher" style={switcher === "top-right" ? { top: 12, right: 12 } : { top: 12, left: 12 }}>
-          <button className="btn icon map-overlay" style={{ background: "rgba(18,21,28,.92)" }} onClick={() => setOpen((v) => !v)} aria-expanded={open} aria-label="Map layers" title="Map layers">
+          <button className="btn icon map-overlay" style={{ background: "rgba(18,21,28,.92)" }} onClick={() => setOpen((v) => !v)} aria-expanded={open} aria-label={t("map.layers")} title={t("map.layers")}>
             <IconLayers />
           </button>
           {open && (
-            <div className="panel map-overlay" style={switcher === "top-left" ? { left: 0, right: "auto" } : undefined} role="dialog" aria-label="Map layers">
-              <div className="section-title" style={{ margin: 0 }}>
-                Basemap
+            <div className="panel map-overlay" style={switcher === "top-left" ? { left: 0, right: "auto" } : undefined} role="dialog" aria-label={t("map.layers")}>
+              {extraLayers && extraLayers.length > 0 && (
+                <>
+                  <div className="section-title" style={{ margin: 0 }}>
+                    {t("map.weather")}
+                  </div>
+                  {extraLayers.map((x) => (
+                    <label key={x.id} className="opt">
+                      <input type="checkbox" checked={x.checked} onChange={(e) => x.onChange(e.target.checked)} />
+                      <span>
+                        {x.label}
+                        {x.description && <small>{x.description}</small>}
+                      </span>
+                    </label>
+                  ))}
+                </>
+              )}
+              <div className="section-title" style={{ margin: extraLayers?.length ? "6px 0 0" : 0 }}>
+                {t("map.basemap")}
               </div>
               {BASEMAPS.map((b) => (
                 <label key={b.id} className="opt">
                   <input type="radio" name="basemap" checked={basemap === b.id} onChange={() => setBasemap(b.id)} />
                   <span>
-                    {b.label}
-                    <small>{b.description}</small>
+                    {tl(`basemap.${b.id}`, b.label)}
+                    <small>{tl(`basemap.${b.id}.desc`, b.description)}</small>
                   </span>
                 </label>
               ))}
               <div className="section-title" style={{ margin: "6px 0 0" }}>
-                Daily satellite imagery
+                {t("map.dailyImagery")}
               </div>
               {overlayDefs.map((o) => (
                 <label key={o.id} className="opt">
                   <input type="checkbox" checked={overlays.includes(o.id)} onChange={(e) => setOverlays((xs) => (e.target.checked ? [...xs, o.id] : xs.filter((x) => x !== o.id)))} />
                   <span>
-                    {o.label}
+                    {tl(`overlay.${o.id}`, o.label)}
                     <small>{o.description} · zoom ≤ 9</small>
                   </span>
                 </label>

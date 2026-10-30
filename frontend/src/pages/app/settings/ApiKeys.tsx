@@ -9,9 +9,11 @@ import { useToast } from "../../../components/Toast";
 import { Button, Card, CopyButton, EmptyState, ErrorState, Input, Loading, Notice, useConfirm } from "../../../components/ui";
 import { fmtDateTime, timeAgo } from "../../../lib/format";
 import { useAsync, useDocumentTitle } from "../../../lib/useAsync";
+import { useT } from "../../../i18n";
 
 export default function ApiKeys() {
-  useDocumentTitle("API keys");
+  const { t } = useT();
+  useDocumentTitle(t("nav.apiKeys"));
   const { me } = useAuth();
   const toast = useToast();
   const { confirm, dialog } = useConfirm();
@@ -27,7 +29,7 @@ export default function ApiKeys() {
     return (
       <div className="page">
         <Card>
-          <EmptyState icon={<IconKey size={20} />} title="Sign in to manage API keys">API keys belong to a user account and act with that user's permissions.</EmptyState>
+          <EmptyState icon={<IconKey size={20} />} title={t("keys.signIn")}>{t("keys.signInBody")}</EmptyState>
         </Card>
       </div>
     );
@@ -51,21 +53,21 @@ export default function ApiKeys() {
     <div className="page">
       <div className="page-head">
         <div>
-          <h1>API keys</h1>
-          <p>Personal keys for scripts and integrations. They act with your permissions in each organisation you belong to.</p>
+          <h1>{t("nav.apiKeys")}</h1>
+          <p>{t("keys.lead")}</p>
         </div>
       </div>
       <div className="settings-layout">
-        <Card title="Create a key">
+        <Card title={t("keys.create")}>
           <form onSubmit={create} className="row wrap" style={{ alignItems: "flex-end" }}>
-            <Input fieldClassName="grow" label="Name" required value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. dispatch integration" maxLength={120} />
+            <Input fieldClassName="grow" label={t("common.name")} required value={name} onChange={(e) => setName(e.target.value)} placeholder={t("keys.namePh")} maxLength={120} />
             <Button type="submit" variant="primary" loading={busy} disabled={!name.trim()}>
-              Create key
+              {t("keys.createBtn")}
             </Button>
           </form>
           {created && (
             <div className="stack tight mt-16">
-              <Notice kind="warn" title={`Key “${created.name}” created`}>
+              <Notice kind="warn" title={t("keys.created", { name: created.name })}>
                 {created.note}
               </Notice>
               <div className="row">
@@ -75,22 +77,22 @@ export default function ApiKeys() {
             </div>
           )}
         </Card>
-        <Card title="Your keys" flush>
+        <Card title={t("keys.yours")} flush>
           {list.error ? (
             <div className="card-body"><ErrorState error={list.error} onRetry={list.reload} /></div>
           ) : !list.data ? (
             <Loading />
           ) : list.data.length === 0 ? (
-            <div className="card-body small muted">No keys yet.</div>
+            <div className="card-body small muted">{t("keys.none")}</div>
           ) : (
             <div className="table-wrap">
               <table className="table">
                 <thead>
                   <tr>
-                    <th>Name</th>
-                    <th>Key</th>
-                    <th>Created</th>
-                    <th>Last used</th>
+                    <th>{t("common.name")}</th>
+                    <th>{t("keys.key")}</th>
+                    <th>{t("alert.created")}</th>
+                    <th>{t("keys.lastUsed")}</th>
                     <th />
                   </tr>
                 </thead>
@@ -100,13 +102,13 @@ export default function ApiKeys() {
                       <td className="strong">{k.name}</td>
                       <td className="mono tiny">{k.prefix}…</td>
                       <td className="small">{fmtDateTime(k.created_at)}</td>
-                      <td className="small muted">{k.last_used_at ? timeAgo(k.last_used_at) : "never"}</td>
+                      <td className="small muted">{k.last_used_at ? timeAgo(k.last_used_at) : t("common.never")}</td>
                       <td className="actions">
                         <Button
                           size="sm"
                           variant="danger"
                           onClick={async () => {
-                            if (!(await confirm({ title: `Revoke “${k.name}”?`, body: "Anything using this key stops working immediately.", confirmLabel: "Revoke", danger: true }))) return;
+                            if (!(await confirm({ title: t("keys.revokeTitle", { name: k.name }), body: t("keys.revokeBody"), confirmLabel: t("keys.revoke"), danger: true }))) return;
                             try {
                               await keys.remove(k.id);
                               void list.reload();
@@ -115,7 +117,7 @@ export default function ApiKeys() {
                             }
                           }}
                         >
-                          Revoke
+                          {t("keys.revoke")}
                         </Button>
                       </td>
                     </tr>
@@ -125,10 +127,10 @@ export default function ApiKeys() {
             </div>
           )}
         </Card>
-        <Card title="Using the API" actions={<CopyButton text={curl.replace(/\\\n\s+/g, "")} label="Copy curl" />}>
+        <Card title={t("keys.using")} actions={<CopyButton text={curl.replace(/\\\n\s+/g, "")} label={t("keys.copyCurl")} />}>
           <pre className="code">{curl}</pre>
           <p className="small muted mt-12">
-            Send <code>Authorization: Bearer &lt;key&gt;</code> on every request. <code>X-Org-Id</code> selects the organisation (default: your first membership). Interactive docs are at{" "}
+            {t("keys.send")} <code>Authorization: Bearer &lt;key&gt;</code> {t("keys.everyRequest")} <code>X-Org-Id</code> {t("keys.orgHeader")}{" "}
             <a href={`${base}/docs`} target="_blank" rel="noreferrer">
               {base}/docs
             </a>

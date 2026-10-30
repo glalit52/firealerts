@@ -6,6 +6,7 @@ import { Spinner } from "./components/ui";
 import { PlanLimitNotice } from "./components/PlanLimitNotice";
 
 const Landing = lazy(() => import("./pages/Landing"));
+const PublicMap = lazy(() => import("./pages/PublicMap"));
 const Login = lazy(() => import("./pages/auth/Login"));
 const Register = lazy(() => import("./pages/auth/Register"));
 const ForgotPassword = lazy(() => import("./pages/auth/ForgotPassword"));
@@ -25,6 +26,7 @@ const Profile = lazy(() => import("./pages/app/settings/Profile"));
 const Organization = lazy(() => import("./pages/app/settings/Organization"));
 const Team = lazy(() => import("./pages/app/settings/Team"));
 const ApiKeys = lazy(() => import("./pages/app/settings/ApiKeys"));
+const Notifications = lazy(() => import("./pages/app/settings/Notifications"));
 const Admin = lazy(() => import("./pages/app/Admin"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
@@ -55,6 +57,7 @@ export function App() {
     <Suspense fallback={<PageSpinner />}>
       <Routes>
         <Route path="/" element={<Landing />} />
+        <Route path="/live" element={<PublicMap />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
@@ -82,6 +85,7 @@ export function App() {
           <Route path="settings/organization" element={<Organization />} />
           <Route path="settings/team" element={<Team />} />
           <Route path="settings/api-keys" element={<ApiKeys />} />
+          <Route path="settings/notifications" element={<Notifications />} />
           <Route
             path="admin"
             element={

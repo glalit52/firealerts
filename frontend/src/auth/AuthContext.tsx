@@ -1,10 +1,12 @@
 /* Session state: who am I, which organisation, what can I do. */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { onApiEvent, session } from "../api/client";
+import { onApiEvent, session, storage } from "../api/client";
 import { auth as authApi, system } from "../api/endpoints";
 import type { Me, Meta, Role, SessionPayload } from "../api/types";
 import { ROLE_RANK } from "../lib/constants";
+import { STORAGE_KEY, isLocale, setLocale } from "../i18n";
+import type { Locale } from "../i18n";
 
 interface AuthState {
   me: Me | null;
@@ -23,6 +25,8 @@ interface AuthState {
   planNotice: string | null;
   clearPlanNotice: () => void;
   sessionExpired: boolean;
+  /** Switch the UI language: persisted locally and, when signed in, on the user profile. */
+  setLanguage: (l: Locale) => Promise<void>;
 }
 
 const Ctx = createContext<AuthState | null>(null);
@@ -42,6 +46,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const stored = session.orgId();
       if (m.authenticated && stored && m.org && String(m.org.id) !== stored && !m.memberships.some((x) => String(x.org_id) === stored)) {
         session.setOrgId(m.org.id);
+      }
+      // The signed-in user's saved language wins over the local choice.
+      const lang = m.user?.language;
+      if (m.authenticated && isLocale(lang)) {
+        setLocale(lang);
+        storage.set(STORAGE_KEY, lang);
       }
       setMe(m);
       return m;
@@ -108,6 +118,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [refresh],
   );
 
+  const setLanguage = useCallback(
+    async (l: Locale) => {
+      setLocale(l);
+      storage.set(STORAGE_KEY, l);
+      if (me?.authenticated && me.user && me.user.language !== l) {
+        try {
+          const u = await authApi.updateMe({ language: l });
+          setMe((prev) => (prev && prev.user ? { ...prev, user: { ...prev.user, ...u, language: l } } : prev));
+        } catch {
+          /* older servers ignore or reject the field; the local choice still applies */
+        }
+      }
+    },
+    [me],
+  );
+
   const value = useMemo<AuthState>(() => {
     const role = me?.role ?? null;
     return {
@@ -125,8 +151,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       planNotice,
       clearPlanNotice: () => setPlanNotice(null),
       sessionExpired,
+      setLanguage,
     };
-  }, [me, meta, loading, refresh, signIn, signOut, switchOrg, epoch, planNotice, sessionExpired]);
+  }, [me, meta, loading, refresh, signIn, signOut, switchOrg, epoch, planNotice, sessionExpired, setLanguage]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

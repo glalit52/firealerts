@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { t, useT } from "../i18n";
 
 export interface AsyncState<T> {
   data: T | undefined;
@@ -60,7 +61,8 @@ export function useBusy() {
 }
 
 export function useDocumentTitle(title: string) {
+  const { locale } = useT();
   useEffect(() => {
-    document.title = title ? `${title} · Firealerts` : "Firealerts — Satellite wildfire intelligence";
-  }, [title]);
+    document.title = title ? `${title} · Firealerts` : `Firealerts — ${t("app.tagline")}`;
+  }, [title, locale]);
 }

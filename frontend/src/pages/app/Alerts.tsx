@@ -7,21 +7,24 @@ import { useAuth } from "../../auth/AuthContext";
 import { IconBell, IconDownload } from "../../components/Icons";
 import { useToast } from "../../components/Toast";
 import { Badge, Button, Card, EmptyState, ErrorState, Loading, Pagination, Select, SeverityChip, Tabs } from "../../components/ui";
-import { fmtDateTime, fmtHours, fmtKm, fmtNum, humanize, timeAgo } from "../../lib/format";
+import { fmtDateTime, fmtHours, fmtKm, fmtNum, timeAgo } from "../../lib/format";
 import { useAsync, useDocumentTitle } from "../../lib/useAsync";
+import { t as tr, tEnum, useT } from "../../i18n";
 
 const LIMIT = 25;
 
 export function alertSummary(a: Alert): string {
   const d = a.data as Record<string, number | string | undefined>;
   if (a.type === "threat" && d.eta_likely_h != null) return `ETA ~${fmtHours(Number(d.eta_likely_h))}${d.eta_p90_h != null ? ` (P90 ${fmtHours(Number(d.eta_p90_h))})` : ""} · ${fmtKm(Number(d.distance_km))}`;
-  if (a.type === "risk" && d.fwi != null) return `FWI ${fmtNum(Number(d.fwi))} · ${humanize(String(d.danger))}${d.date ? ` on ${d.date}` : ""}`;
-  if (a.type === "detection" && d.count != null) return `${d.count} detection${Number(d.count) === 1 ? "" : "s"}${d.inside ? ` · ${d.inside} inside` : ""}${d.nearest_km != null ? ` · nearest ${fmtKm(Number(d.nearest_km))}` : ""}`;
+  if (a.type === "risk" && d.fwi != null) return `FWI ${fmtNum(Number(d.fwi))} · ${tEnum("danger", String(d.danger))}${d.date ? ` · ${tr("alerts.onDate", { date: String(d.date) })}` : ""}`;
+  if (a.type === "detection" && d.count != null)
+    return `${tr("stats.tooltip", { count: Number(d.count) })}${d.inside ? ` · ${tr("alerts.inside", { n: Number(d.inside) })}` : ""}${d.nearest_km != null ? ` · ${tr("alerts.nearest", { km: fmtKm(Number(d.nearest_km)) })}` : ""}`;
   return a.message.slice(0, 120);
 }
 
 export default function Alerts() {
-  useDocumentTitle("Alerts");
+  const { t } = useT();
+  useDocumentTitle(t("nav.alerts"));
   const { meta, can } = useAuth();
   const toast = useToast();
   const [params, setParams] = useSearchParams();
@@ -47,8 +50,8 @@ export default function Alerts() {
 
   const severityOptions = useMemo(() => {
     const sev = meta?.severities ?? ["info", "low", "moderate", "high", "critical"];
-    return [{ value: "", label: "Any severity" }, ...sev.map((s, i) => ({ value: sev.slice(i).join(","), label: `${humanize(s)}${i < sev.length - 1 ? " +" : ""}` }))];
-  }, [meta]);
+    return [{ value: "", label: t("alerts.anySeverity") }, ...sev.map((s, i) => ({ value: sev.slice(i).join(","), label: `${tEnum("severityName", s)}${i < sev.length - 1 ? " +" : ""}` }))];
+  }, [meta, t]);
 
   const act = async (a: Alert, action: "ack" | "resolve" | "reopen") => {
     setBusy(a.id);
@@ -69,11 +72,11 @@ export default function Alerts() {
     <div className="page">
       <div className="page-head">
         <div>
-          <h1>Alerts</h1>
-          <p>Fires detected in or near your assets, forecast threats with arrival times, and high fire-danger warnings.</p>
+          <h1>{t("nav.alerts")}</h1>
+          <p>{t("alerts.lead")}</p>
         </div>
         <Button icon={<IconDownload />} onClick={() => dataApi.exportAlerts(Math.max(days, 90)).catch((e) => toast.error(e))}>
-          Export CSV
+          {t("alerts.export")}
         </Button>
       </div>
 
@@ -82,57 +85,57 @@ export default function Alerts() {
           <Tabs
             value={status ?? "active"}
             onChange={(v) => setParam("status", v)}
-            label="Status"
+            label={t("alerts.status")}
             tabs={[
-              { id: "active", label: "Active", count: (bs.open ?? 0) + (bs.acknowledged ?? 0) },
-              { id: "open", label: "Open", count: bs.open ?? 0 },
-              { id: "acknowledged", label: "Acknowledged", count: bs.acknowledged ?? 0 },
-              { id: "resolved", label: "Resolved", count: bs.resolved ?? 0 },
+              { id: "active", label: t("alertStatus.active"), count: (bs.open ?? 0) + (bs.acknowledged ?? 0) },
+              { id: "open", label: t("alertStatus.open"), count: bs.open ?? 0 },
+              { id: "acknowledged", label: t("alertStatus.acknowledged"), count: bs.acknowledged ?? 0 },
+              { id: "resolved", label: t("alertStatus.resolved"), count: bs.resolved ?? 0 },
             ]}
           />
         </div>
         <div className="filters" style={{ padding: "12px 18px", borderBottom: "1px solid var(--line)" }}>
-          <Select inputSize="sm" value={type} onChange={(e) => setParam("type", e.target.value)} aria-label="Type">
-            <option value="">All types</option>
-            {(meta?.alert_types ?? ["detection", "threat", "risk", "system"]).map((t) => (
-              <option key={t} value={t}>
-                {humanize(t)}
+          <Select inputSize="sm" value={type} onChange={(e) => setParam("type", e.target.value)} aria-label={t("alerts.type")}>
+            <option value="">{t("alerts.allTypes")}</option>
+            {(meta?.alert_types ?? ["detection", "threat", "risk", "system"]).map((x) => (
+              <option key={x} value={x}>
+                {tEnum("alertType", x)}
               </option>
             ))}
           </Select>
-          <Select inputSize="sm" value={severity} onChange={(e) => setParam("severity", e.target.value)} aria-label="Severity" options={severityOptions} />
-          <Select inputSize="sm" value={assetId ?? ""} onChange={(e) => setParam("asset_id", e.target.value)} aria-label="Asset">
-            <option value="">All assets</option>
+          <Select inputSize="sm" value={severity} onChange={(e) => setParam("severity", e.target.value)} aria-label={t("alerts.severity")} options={severityOptions} />
+          <Select inputSize="sm" value={assetId ?? ""} onChange={(e) => setParam("asset_id", e.target.value)} aria-label={t("overview.col.asset")}>
+            <option value="">{t("alerts.allAssets")}</option>
             {(assets.data ?? []).map((a) => (
               <option key={a.id} value={a.id}>
                 {a.name}
               </option>
             ))}
           </Select>
-          <Select inputSize="sm" value={days} onChange={(e) => setParam("days", e.target.value)} aria-label="Period">
+          <Select inputSize="sm" value={days} onChange={(e) => setParam("days", e.target.value)} aria-label={t("alerts.period")}>
             {[1, 7, 30, 90, 365].map((d) => (
               <option key={d} value={d}>
-                Last {d === 1 ? "24 h" : `${d} days`}
+                {d === 1 ? t("common.lastHours", { n: 24 }) : t("common.lastDays", { n: d })}
               </option>
             ))}
           </Select>
           {(type || severity || assetId) && (
             <Button size="sm" variant="ghost" onClick={() => setParams(status ? { status } : {}, { replace: true })}>
-              Clear filters
+              {t("alerts.clear")}
             </Button>
           )}
           <div className="grow" />
-          {list.data && <span className="small muted">{fmtNum(list.data.total)} alerts</span>}
+          {list.data && <span className="small muted">{t("alerts.count", { count: list.data.total })}</span>}
         </div>
         {list.error ? (
           <div className="card-body">
             <ErrorState error={list.error} onRetry={list.reload} />
           </div>
         ) : !list.data ? (
-          <Loading label="Loading alerts" />
+          <Loading label={t("alerts.loading")} />
         ) : list.data.items.length === 0 ? (
-          <EmptyState icon={<IconBell size={20} />} title={status === "resolved" ? "No resolved alerts" : "No alerts match"}>
-            {status === "active" && !type && !severity && !assetId ? "All clear. New fires near your assets, threats and high-danger days will appear here." : "Try widening the filters or period."}
+          <EmptyState icon={<IconBell size={20} />} title={status === "resolved" ? t("alerts.noResolved") : t("alerts.noMatch")}>
+            {status === "active" && !type && !severity && !assetId ? t("alerts.allClear") : t("alerts.widen")}
           </EmptyState>
         ) : (
           <>
@@ -141,7 +144,7 @@ export default function Alerts() {
                 <div key={a.id} className={`alert-row ${a.status === "resolved" ? "resolved" : ""}`}>
                   <div>
                     <SeverityChip severity={a.severity} />
-                    <div className="tiny muted mt-4">{humanize(a.type)}</div>
+                    <div className="tiny muted mt-4">{tEnum("alertType", a.type)}</div>
                   </div>
                   <Link to={`/app/alerts/${a.id}`} style={{ color: "var(--text)", minWidth: 0 }}>
                     <div className="title truncate">{a.title}</div>
@@ -151,25 +154,25 @@ export default function Alerts() {
                     </div>
                     <div className="tiny faint" title={fmtDateTime(a.created_at)}>
                       {timeAgo(a.created_at)}
-                      {a.deliveries.length > 0 && ` · delivered to ${a.deliveries.length} channel${a.deliveries.length === 1 ? "" : "s"}`}
+                      {a.deliveries.length > 0 && ` · ${t("alerts.delivered", { count: a.deliveries.length })}`}
                     </div>
                   </Link>
                   <div className="row right" style={{ justifyContent: "flex-end" }}>
-                    {a.status === "acknowledged" && <Badge kind="info">Acknowledged</Badge>}
-                    {a.status === "resolved" && <Badge>Resolved</Badge>}
+                    {a.status === "acknowledged" && <Badge kind="info">{t("alertStatus.acknowledged")}</Badge>}
+                    {a.status === "resolved" && <Badge>{t("alertStatus.resolved")}</Badge>}
                     {can("member") && a.status === "open" && (
                       <Button size="sm" loading={busy === a.id} onClick={() => act(a, "ack")}>
-                        Acknowledge
+                        {t("alerts.ack")}
                       </Button>
                     )}
                     {can("member") && a.status !== "resolved" && (
                       <Button size="sm" variant="ghost" disabled={busy === a.id} onClick={() => act(a, "resolve")}>
-                        Resolve
+                        {t("alerts.resolve")}
                       </Button>
                     )}
                     {can("member") && a.status === "resolved" && (
                       <Button size="sm" variant="ghost" loading={busy === a.id} onClick={() => act(a, "reopen")}>
-                        Reopen
+                        {t("alerts.reopen")}
                       </Button>
                     )}
                   </div>

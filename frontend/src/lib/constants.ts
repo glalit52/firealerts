@@ -1,4 +1,5 @@
 import type { Danger, Severity } from "../api/types";
+import { t } from "../i18n";
 
 export const SEVERITY_COLORS: Record<Severity, string> = {
   info: "#5aa9ff",
@@ -10,13 +11,22 @@ export const SEVERITY_COLORS: Record<Severity, string> = {
 
 export const SEVERITY_ORDER: Severity[] = ["info", "low", "moderate", "high", "critical"];
 
+/** Danger classes. `label` is a getter so it follows the current language. */
+function dangerEntry(key: Danger, color: string) {
+  return {
+    color,
+    get label() {
+      return t(`danger.${key}`);
+    },
+  };
+}
 export const DANGER: Record<Danger, { label: string; color: string }> = {
-  very_low: { label: "Very low", color: "#3ecf8e" },
-  low: { label: "Low", color: "#9be15d" },
-  moderate: { label: "Moderate", color: "#ffd84d" },
-  high: { label: "High", color: "#ff9a3c" },
-  very_high: { label: "Very high", color: "#ff4d4d" },
-  extreme: { label: "Extreme", color: "#a1124a" },
+  very_low: dangerEntry("very_low", "#3ecf8e"),
+  low: dangerEntry("low", "#9be15d"),
+  moderate: dangerEntry("moderate", "#ffd84d"),
+  high: dangerEntry("high", "#ff9a3c"),
+  very_high: dangerEntry("very_high", "#ff4d4d"),
+  extreme: dangerEntry("extreme", "#a1124a"),
 };
 
 export function dangerInfo(d: string | null | undefined) {
@@ -41,7 +51,17 @@ export const probColor = (p: number) => (PROB_BANDS.find(([u]) => p < u) ?? PROB
 
 export const AGE_COLORS = ["#fff3b0", "#ffb02b", "#ff6a2b", "#b3263b"];
 
-export const CONFIDENCE_LABELS: Record<string, string> = { l: "Low", n: "Nominal", h: "High" };
+export const CONFIDENCE_LABELS: Record<string, string> = {
+  get l() {
+    return t("confidence.l");
+  },
+  get n() {
+    return t("confidence.n");
+  },
+  get h() {
+    return t("confidence.h");
+  },
+};
 
 export const ROLE_RANK = { viewer: 0, member: 1, admin: 2, owner: 3 } as const;
 
@@ -57,7 +77,13 @@ export const isGeoSource = (src: string) => /^(GOES|HIMAWARI|METEOSAT)/.test(src
 export const SENSOR_GROUPS: { id: string; label: string; match: (s: string) => boolean }[] = [
   { id: "viirs", label: "VIIRS 375 m", match: (s) => s.startsWith("VIIRS") },
   { id: "modis", label: "MODIS 1 km", match: (s) => s.startsWith("MODIS") },
-  { id: "geo", label: "Geostationary", match: isGeoSource },
+  {
+    id: "geo",
+    get label() {
+      return t("sensor.geo");
+    },
+    match: isGeoSource,
+  },
 ];
 
 export const TIMEZONES = [

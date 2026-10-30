@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import type { Severity } from "../api/types";
 import { dangerInfo } from "../lib/constants";
+import { tEnum, useT } from "../i18n";
 import { IconCheck, IconCopy, IconInfo, IconAlert, IconX } from "./Icons";
 
 const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
@@ -145,13 +146,15 @@ export function Segmented<T extends string | number>({ value, onChange, options,
 
 // ------------------------------------------------------------------ Display
 export function Spinner({ size }: { size?: "lg" }) {
-  return <span className={cx("spinner", size)} role="status" aria-label="Loading" />;
+  const { t } = useT();
+  return <span className={cx("spinner", size)} role="status" aria-label={t("common.loading")} />;
 }
 
-export function Loading({ label = "Loading" }: { label?: string }) {
+export function Loading({ label }: { label?: string }) {
+  const { t } = useT();
   return (
     <div className="loading-block">
-      <Spinner /> {label}…
+      <Spinner /> {label ?? t("common.loading")}…
     </div>
   );
 }
@@ -168,16 +171,17 @@ export function EmptyState({ icon, title, children, action }: { icon?: ReactNode
 }
 
 export function ErrorState({ error, onRetry }: { error: Error; onRetry?: () => void }) {
+  const { t } = useT();
   return (
     <div className="notice bad" role="alert">
       <IconAlert />
       <div className="grow">
-        <div className="strong">Couldn't load this</div>
+        <div className="strong">{t("common.couldNotLoad")}</div>
         <div className="small">{error.message}</div>
       </div>
       {onRetry && (
         <Button size="sm" onClick={onRetry}>
-          Retry
+          {t("common.retry")}
         </Button>
       )}
     </div>
@@ -207,10 +211,12 @@ export function Badge({ kind, children, dot, title }: { kind?: "ok" | "warn" | "
 }
 
 export function SeverityChip({ severity }: { severity: Severity | string }) {
-  return <span className={`sev sev-${severity}`}>{severity}</span>;
+  useT();
+  return <span className={`sev sev-${severity}`}>{tEnum("severity", severity, (v) => v)}</span>;
 }
 
 export function DangerPill({ danger, children }: { danger: string; children?: ReactNode }) {
+  useT();
   const d = dangerInfo(danger);
   return (
     <span className="danger-pill" style={{ background: d.color, color: danger === "extreme" ? "#fff" : "#14161c" }}>
@@ -290,6 +296,7 @@ export function Tabs<T extends string>({ tabs, value, onChange, label }: { tabs:
 // ------------------------------------------------------------------ Modal
 export function Modal({ open, onClose, title, description, children, footer, size, dismissible = true }: { open: boolean; onClose: () => void; title: ReactNode; description?: ReactNode; children?: ReactNode; footer?: ReactNode; size?: "wide" | "xwide"; dismissible?: boolean }) {
   const titleId = useId();
+  const { t } = useT();
   const ref = useRef<HTMLDivElement>(null);
   const lastFocus = useRef<Element | null>(null);
 
@@ -334,7 +341,7 @@ export function Modal({ open, onClose, title, description, children, footer, siz
             {description && <p>{description}</p>}
           </div>
           {dismissible && (
-            <button className="close-btn" onClick={onClose} aria-label="Close dialog" type="button">
+            <button className="close-btn" onClick={onClose} aria-label={t("common.closeDialog")} type="button">
               <IconX />
             </button>
           )}
@@ -349,6 +356,7 @@ export function Modal({ open, onClose, title, description, children, footer, siz
 
 /** Imperative confirm dialog hook. */
 export function useConfirm() {
+  const { t } = useT();
   const [state, setState] = useState<{ title: string; body?: ReactNode; confirmLabel?: string; danger?: boolean; resolve: (v: boolean) => void } | null>(null);
   const confirm = useCallback(
     (opts: { title: string; body?: ReactNode; confirmLabel?: string; danger?: boolean }) => new Promise<boolean>((resolve) => setState({ ...opts, resolve })),
@@ -365,9 +373,9 @@ export function useConfirm() {
       title={state?.title ?? ""}
       footer={
         <>
-          <Button onClick={() => close(false)}>Cancel</Button>
+          <Button onClick={() => close(false)}>{t("common.cancel")}</Button>
           <Button variant={state?.danger ? "danger" : "primary"} onClick={() => close(true)}>
-            {state?.confirmLabel ?? "Confirm"}
+            {state?.confirmLabel ?? t("common.confirm")}
           </Button>
         </>
       }
@@ -381,6 +389,7 @@ export function useConfirm() {
 // ------------------------------------------------------------------ Drawer
 export function Drawer({ title, subtitle, onClose, children, className }: { title: ReactNode; subtitle?: ReactNode; onClose: () => void; children: ReactNode; className?: string }) {
   const titleId = useId();
+  const { t } = useT();
   return (
     <aside className={cx("drawer", className)} role="dialog" aria-labelledby={titleId}>
       <div className="drawer-head">
@@ -390,7 +399,7 @@ export function Drawer({ title, subtitle, onClose, children, className }: { titl
           </h2>
           {subtitle && <div className="small muted mt-4">{subtitle}</div>}
         </div>
-        <button className="close-btn" onClick={onClose} aria-label="Close panel" type="button">
+        <button className="close-btn" onClick={onClose} aria-label={t("common.closePanel")} type="button">
           <IconX />
         </button>
       </div>
@@ -400,7 +409,8 @@ export function Drawer({ title, subtitle, onClose, children, className }: { titl
 }
 
 // ------------------------------------------------------------------ Copy
-export function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) {
+export function CopyButton({ text, label }: { text: string; label?: string }) {
+  const { t } = useT();
   const [done, setDone] = useState(false);
   return (
     <Button
@@ -421,29 +431,28 @@ export function CopyButton({ text, label = "Copy" }: { text: string; label?: str
         setTimeout(() => setDone(false), 1600);
       }}
     >
-      {done ? "Copied" : label}
+      {done ? t("common.copied") : (label ?? t("common.copy"))}
     </Button>
   );
 }
 
 export function Pagination({ total, limit, offset, onChange }: { total: number; limit: number; offset: number; onChange: (offset: number) => void }) {
+  const { t } = useT();
   if (total <= limit) return null;
   const page = Math.floor(offset / limit) + 1;
   const pages = Math.ceil(total / limit);
   return (
-    <nav className="row between small" aria-label="Pagination" style={{ padding: "12px 18px", borderTop: "1px solid var(--line)" }}>
+    <nav className="row between small" aria-label={t("common.pagination")} style={{ padding: "12px 18px", borderTop: "1px solid var(--line)" }}>
       <span className="muted">
-        {offset + 1}–{Math.min(total, offset + limit)} of {total.toLocaleString()}
+        {t("common.pageRange", { from: offset + 1, to: Math.min(total, offset + limit), total })}
       </span>
       <div className="row">
         <Button size="sm" disabled={page <= 1} onClick={() => onChange(Math.max(0, offset - limit))}>
-          Previous
+          {t("common.previous")}
         </Button>
-        <span className="muted">
-          Page {page} / {pages}
-        </span>
+        <span className="muted">{t("common.pageOf", { page, pages })}</span>
         <Button size="sm" disabled={page >= pages} onClick={() => onChange(offset + limit)}>
-          Next
+          {t("common.next")}
         </Button>
       </div>
     </nav>

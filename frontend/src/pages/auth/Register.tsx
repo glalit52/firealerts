@@ -7,9 +7,11 @@ import { useAuth } from "../../auth/AuthContext";
 import { errorMessage } from "../../components/Toast";
 import { Button, ButtonLink, Input, Notice } from "../../components/ui";
 import { AuthLayout, safeNext } from "./AuthLayout";
+import { useT } from "../../i18n";
 
 export default function Register() {
   const { me, signIn } = useAuth();
+  const { t } = useT();
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const next = safeNext(params.get("next"));
@@ -22,7 +24,7 @@ export default function Register() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (form.password.length < 8) {
-      setError("Use at least 8 characters for your password.");
+      setError(t("auth.register.pwShort"));
       return;
     }
     setBusy(true);
@@ -41,14 +43,14 @@ export default function Register() {
 
   if (verification) {
     return (
-      <AuthLayout docTitle="Account created" title="Welcome to Firealerts" lead="Your account and organisation are ready.">
+      <AuthLayout docTitle={t("auth.register.createdDoc")} title={t("auth.register.welcome")} lead={t("auth.register.ready")}>
         <div className="stack">
-          <Notice kind="info" title="Confirm your e-mail">
-            {verification.emailed ? "We sent you a confirmation link." : "E-mail delivery isn't configured on this server."} Development link:{" "}
+          <Notice kind="info" title={t("auth.register.confirm")}>
+            {verification.emailed ? t("auth.register.sentLink") : t("auth.register.noEmail")} {t("common.devLink")}{" "}
             <a href={verification.dev_link} style={{ wordBreak: "break-all" }}>{verification.dev_link}</a>
           </Notice>
           <ButtonLink to={next} variant="primary" size="lg">
-            Open the app
+            {t("common.openApp")}
           </ButtonLink>
         </div>
       </AuthLayout>
@@ -58,28 +60,28 @@ export default function Register() {
   const closed = me?.registration_open === false;
   return (
     <AuthLayout
-      docTitle="Create account"
-      title="Create your account"
-      lead="You'll get your own organisation and can invite your team afterwards."
+      docTitle={t("common.createAccount")}
+      title={t("auth.register.title")}
+      lead={t("auth.register.lead")}
       footer={
         <>
-          Already have an account? <Link to={`/login${params.get("next") ? `?next=${encodeURIComponent(next)}` : ""}`}>Sign in</Link>
+          {t("auth.register.haveAccount")} <Link to={`/login${params.get("next") ? `?next=${encodeURIComponent(next)}` : ""}`}>{t("common.signIn")}</Link>
         </>
       }
     >
       {closed ? (
-        <Notice kind="warn" title="Registration is by invitation">Ask an administrator of your organisation to invite you.</Notice>
+        <Notice kind="warn" title={t("auth.register.closedTitle")}>{t("auth.register.closedBody")}</Notice>
       ) : (
         <form onSubmit={submit}>
-          <Input label="Your name" autoComplete="name" value={form.name} onChange={set("name")} autoFocus />
-          <Input label="Work e-mail" type="email" autoComplete="email" required value={form.email} onChange={set("email")} />
-          <Input label="Password" type="password" autoComplete="new-password" required minLength={8} value={form.password} onChange={set("password")} hint="At least 8 characters." />
-          <Input label="Organisation name" value={form.org_name} onChange={set("org_name")} placeholder="e.g. Sierra Forestry Co." />
+          <Input label={t("common.yourName")} autoComplete="name" value={form.name} onChange={set("name")} autoFocus />
+          <Input label={t("auth.register.workEmail")} type="email" autoComplete="email" required value={form.email} onChange={set("email")} />
+          <Input label={t("common.password")} type="password" autoComplete="new-password" required minLength={8} value={form.password} onChange={set("password")} hint={t("auth.register.pwHint")} />
+          <Input label={t("auth.register.orgName")} value={form.org_name} onChange={set("org_name")} placeholder={t("auth.register.orgPlaceholder")} />
           {error && <div className="form-error" role="alert">{error}</div>}
           <Button type="submit" variant="primary" size="lg" block loading={busy}>
-            Create account
+            {t("common.createAccount")}
           </Button>
-          <p className="tiny muted" style={{ textAlign: "center" }}>Free plan · no credit card required</p>
+          <p className="tiny muted" style={{ textAlign: "center" }}>{t("auth.register.free")}</p>
         </form>
       )}
     </AuthLayout>

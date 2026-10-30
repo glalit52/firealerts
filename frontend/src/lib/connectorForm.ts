@@ -1,6 +1,7 @@
 /* Dynamic connector forms: values, validation and conversion to the API config. */
 
 import type { ConnectorField } from "../api/types";
+import { t } from "../i18n";
 
 export const SECRET_MARKER = "••••••";
 
@@ -49,31 +50,31 @@ export function validateConnector(
   opts: { name?: string; storedConfig?: Record<string, unknown> } = {},
 ): Record<string, string> {
   const errors: Record<string, string> = {};
-  if (opts.name !== undefined && !opts.name.trim()) errors.__name = "Give this connection a name.";
+  if (opts.name !== undefined && !opts.name.trim()) errors.__name = t("cform.errName");
   for (const f of fields) {
     const raw = values[f.key];
     if (f.type === "bool") continue;
     const v = typeof raw === "string" ? raw.trim() : "";
     const kept = !v && hasStoredSecret(f, opts.storedConfig);
     if (f.required && !v && !kept) {
-      errors[f.key] = `${f.label} is required.`;
+      errors[f.key] = t("cform.errRequired", { label: f.label });
       continue;
     }
     if (!v || v === SECRET_MARKER) continue;
-    if (f.type === "url" && !isUrl(v)) errors[f.key] = "Enter a full URL starting with https://";
+    if (f.type === "url" && !isUrl(v)) errors[f.key] = t("cform.errUrl");
     if (f.type === "list") {
       const items = splitList(v);
-      if (f.required && !items.length) errors[f.key] = `${f.label} needs at least one entry.`;
+      if (f.required && !items.length) errors[f.key] = t("cform.errList", { label: f.label });
       if (/recipient|email/i.test(f.key)) {
         const bad = items.filter((x) => !EMAIL_RE.test(x));
-        if (bad.length) errors[f.key] = `Not an e-mail address: ${bad.join(", ")}`;
+        if (bad.length) errors[f.key] = t("cform.errEmail", { list: bad.join(", ") });
       }
     }
     if (f.type === "textarea" && /json/i.test(f.key)) {
       try {
         JSON.parse(v);
       } catch {
-        errors[f.key] = "This must be valid JSON (paste the whole service-account key file).";
+        errors[f.key] = t("cform.errJson");
       }
     }
   }

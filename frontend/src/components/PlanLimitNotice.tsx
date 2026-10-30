@@ -8,6 +8,7 @@ import { fmtNum } from "../lib/format";
 import { IconZap } from "./Icons";
 import { useToast } from "./Toast";
 import { Button, Modal } from "./ui";
+import { t as tr, useT } from "../i18n";
 
 /** Start Stripe Checkout for a plan; falls back to a clear message when billing is disabled (501). */
 export function useCheckout() {
@@ -19,7 +20,7 @@ export function useCheckout() {
       const { url } = await billing.checkout(plan);
       window.location.assign(url);
     } catch (err) {
-      if (err instanceof ApiError && err.status === 501) toast.show("Online billing isn't enabled on this server. Contact your administrator to change plans.", "warning", "Billing unavailable", 7000);
+      if (err instanceof ApiError && err.status === 501) toast.show(tr("plan.billingOff"), "warning", tr("plan.billingOffTitle"), 7000);
       else toast.error(err);
       setBusy(null);
     }
@@ -30,11 +31,12 @@ export function useCheckout() {
 export function UpgradeButton({ plan, label, variant = "primary", size }: { plan: string; label?: string; variant?: "primary" | "default"; size?: "sm" | "md" | "lg" }) {
   const { meta, can } = useAuth();
   const { start, busy } = useCheckout();
+  const { t } = useT();
   const planLabel = meta?.plans[plan]?.label ?? plan;
   if (!meta?.billing_enabled) return null;
   return (
-    <Button variant={variant} size={size} icon={<IconZap />} loading={busy === plan} disabled={!can("owner")} title={can("owner") ? undefined : "Only organisation owners can change the plan"} onClick={() => start(plan)}>
-      {label ?? `Upgrade to ${planLabel}`}
+    <Button variant={variant} size={size} icon={<IconZap />} loading={busy === plan} disabled={!can("owner")} title={can("owner") ? undefined : t("plan.ownersOnly")} onClick={() => start(plan)}>
+      {label ?? t("plan.upgradeTo", { plan: planLabel })}
     </Button>
   );
 }
@@ -42,6 +44,7 @@ export function UpgradeButton({ plan, label, variant = "primary", size }: { plan
 export function PlanLimitNotice() {
   const { planNotice, clearPlanNotice, me, meta, can } = useAuth();
   const navigate = useNavigate();
+  const { t } = useT();
   const current = me?.org?.plan ?? "free";
   const order = Object.keys(meta?.plans ?? {});
   const higher = order.slice(order.indexOf(current) + 1);
@@ -49,18 +52,18 @@ export function PlanLimitNotice() {
     <Modal
       open={!!planNotice}
       onClose={clearPlanNotice}
-      title="You've reached your plan's limit"
+      title={t("plan.limitTitle")}
       description={planNotice ?? undefined}
       footer={
         <>
-          <Button onClick={clearPlanNotice}>Not now</Button>
+          <Button onClick={clearPlanNotice}>{t("plan.notNow")}</Button>
           <Button
             onClick={() => {
               clearPlanNotice();
               navigate("/app/settings/organization");
             }}
           >
-            View plan &amp; usage
+            {t("plan.viewUsage")}
           </Button>
           {meta?.billing_enabled && higher[0] && can("owner") && <UpgradeButton plan={higher[0]} />}
         </>
@@ -73,17 +76,21 @@ export function PlanLimitNotice() {
             <div key={p} className="card inset" style={{ padding: 14 }}>
               <div className="row between">
                 <b>{l.label}</b>
-                {meta?.billing_enabled && can("owner") && <UpgradeButton plan={p} size="sm" variant="default" label="Choose" />}
+                {meta?.billing_enabled && can("owner") && <UpgradeButton plan={p} size="sm" variant="default" label={t("plan.choose")} />}
               </div>
               <div className="small muted mt-4">
-                {l.assets == null ? "Unlimited" : fmtNum(l.assets)} assets · {l.members == null ? "unlimited" : fmtNum(l.members)} members · {l.connectors == null ? "unlimited" : fmtNum(l.connectors)} integrations ·{" "}
-                {l.max_asset_ha == null ? "any asset size" : `assets up to ${fmtNum(l.max_asset_ha)} ha`}
+                {t("plan.summary", {
+                  assets: l.assets == null ? t("common.unlimitedLower") : fmtNum(l.assets),
+                  members: l.members == null ? t("common.unlimitedLower") : fmtNum(l.members),
+                  integrations: l.connectors == null ? t("common.unlimitedLower") : fmtNum(l.connectors),
+                })}{" "}
+                · {l.max_asset_ha == null ? t("plan.anySize") : t("plan.maxSize", { ha: fmtNum(l.max_asset_ha) })}
               </div>
             </div>
           );
         })}
-        {!meta?.billing_enabled && <div className="small muted">To change plans, contact your Firealerts administrator.</div>}
-        {meta?.billing_enabled && !can("owner") && <div className="small muted">Ask an organisation owner to upgrade.</div>}
+        {!meta?.billing_enabled && <div className="small muted">{t("plan.contactAdmin")}</div>}
+        {meta?.billing_enabled && !can("owner") && <div className="small muted">{t("plan.askOwner")}</div>}
       </div>
     </Modal>
   );

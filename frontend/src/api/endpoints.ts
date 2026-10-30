@@ -25,7 +25,7 @@ export const auth = {
   forgotPassword: (email: string) => request<{ accepted: boolean; dev_link?: string }>("/api/auth/forgot-password", { method: "POST", body: { email }, quiet: true }),
   resetPassword: (token: string, password: string) => request<T.SessionPayload>("/api/auth/reset-password", { method: "POST", body: { token, password }, quiet: true }),
   me: () => request<T.Me>("/api/me", { quiet: true }),
-  updateMe: (body: { name?: string }) => request<T.User>("/api/me", { method: "PATCH", body }),
+  updateMe: (body: { name?: string; language?: T.Language }) => request<T.User>("/api/me", { method: "PATCH", body }),
   deleteMe: () => request<null>("/api/me", { method: "DELETE" }),
   changePassword: (current_password: string, new_password: string) =>
     request<{ changed: boolean }>("/api/me/password", { method: "POST", body: { current_password, new_password } }),
@@ -129,8 +129,10 @@ export interface ForecastParams {
 }
 
 export const fire = {
-  detections: (q: { bbox?: string; hours?: number; sources?: string } = {}, signal?: AbortSignal) =>
+  detections: (q: { bbox?: string; hours?: number; sources?: string; from?: string; to?: string } = {}, signal?: AbortSignal) =>
     request<T.DetectionCollection>("/api/detections", { query: q, signal }),
+  stats: (bbox: string, days = 30, signal?: AbortSignal) => request<T.FireStats>("/api/stats/fires", { query: { bbox, days }, signal }),
+  wind: (bbox: string, n = 12, signal?: AbortSignal) => request<T.WindField>("/api/weather/wind", { query: { bbox, n }, signal }),
   incidents: (q: { bbox?: string; hours?: number; min_count?: number; limit?: number } = {}, signal?: AbortSignal) =>
     request<T.IncidentList>("/api/incidents", { query: q, signal }),
   incident: (id: string, hours = 24) => request<T.Incident & { timeline: { hour: string; count: number }[] }>(`/api/incidents/${enc(id)}`, { query: { hours } }),
@@ -143,6 +145,31 @@ export const fire = {
   ignition: (bbox: string, n = 10) => request<T.IgnitionGrid>("/api/risk/ignition", { query: { bbox, n } }),
   riskModel: () => request<T.RiskModelMeta>("/api/risk/model"),
   fuels: () => request<T.Fuel[]>("/api/fuels"),
+};
+
+// ------------------------------------------------------------------ public (no auth; 404 when disabled)
+export const publicApi = {
+  status: () => request<T.PublicStatus>("/api/public/status", { quiet: true }),
+  detections: (bbox: string, hours = 24, signal?: AbortSignal) => request<T.DetectionCollection>("/api/public/detections", { query: { bbox, hours }, signal, quiet: true }),
+  incidents: (bbox: string, minCount = 1, signal?: AbortSignal) => request<T.IncidentList>("/api/public/incidents", { query: { bbox, min_count: minCount }, signal, quiet: true }),
+  wind: (bbox: string, n = 12, signal?: AbortSignal) => request<T.WindField>("/api/public/wind", { query: { bbox, n }, signal, quiet: true }),
+};
+
+// ------------------------------------------------------------------ web push
+export interface PushSubscriptionBody {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+  expirationTime?: number | null;
+  user_agent?: string;
+}
+
+export const push = {
+  vapidKey: () => request<T.VapidKey>("/api/push/vapid-public-key"),
+  list: () => request<T.PushDevice[]>("/api/push/subscriptions"),
+  subscribe: (body: PushSubscriptionBody) => request<unknown>("/api/push/subscriptions", { method: "POST", body }),
+  unsubscribe: (endpoint: string) => request<null>("/api/push/subscriptions", { method: "DELETE", body: { endpoint } }),
+  remove: (id: number | string) => request<null>(`/api/push/subscriptions/${enc(String(id))}`, { method: "DELETE" }),
+  test: () => request<{ sent: number; failed: number }>("/api/push/test", { method: "POST" }),
 };
 
 // ------------------------------------------------------------------ data

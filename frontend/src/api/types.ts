@@ -58,7 +58,15 @@ export interface Meta {
   danger_classes: Danger[];
   fuels: Fuel[];
   connector_types: Record<string, ConnectorType>;
+  /** Supported UI / alert languages (newer servers). */
+  languages?: string[];
+  /** Whether the public live map (/api/public/*) is enabled. */
+  public_map?: boolean;
+  /** Whether Web Push is configured (VAPID keys present). */
+  push_enabled?: boolean;
 }
+
+export type Language = "en" | "es" | "pt";
 
 export interface Fuel {
   code: string;
@@ -116,6 +124,7 @@ export interface User {
   is_superuser: boolean;
   email_verified: boolean;
   created_at: string | null;
+  language?: Language | null;
 }
 
 export interface Membership {
@@ -138,6 +147,8 @@ export interface OrgSettings {
   daily_digest?: boolean;
   units?: string;
   default_buffer_km?: number;
+  /** Language for alert messages and e-mails sent to this organisation. */
+  language?: Language;
 }
 
 export interface Me {
@@ -515,6 +526,16 @@ export interface DetectionProps {
   distance_km?: number;
   age_h?: number;
   kind?: "geo" | "polar";
+  /** Known static heat source near the pixel (volcano, gas flare, persistent industrial heat). */
+  static_source?: StaticSourceType | null;
+}
+
+export type StaticSourceType = "volcano" | "industrial" | "persistent";
+
+export interface StaticSource {
+  type: StaticSourceType;
+  name: string;
+  distance_km: number;
 }
 
 export type DetectionCollection = FeatureCollection<Point, DetectionProps>;
@@ -536,6 +557,7 @@ export interface Incident {
   priority: number;
   status: string;
   hull: Polygon | null;
+  static_source?: StaticSource | null;
 }
 
 export interface IncidentList {
@@ -654,6 +676,43 @@ export interface DataUsage {
   observations: number;
   risk_snapshots: number;
   platform_detections: number;
+}
+
+export interface WindProps {
+  /** km/h, one value per entry of `hours`. */
+  speed: number[];
+  /** Degrees the wind blows FROM (meteorological), one per hour. */
+  dir: number[];
+}
+
+export interface WindField {
+  source: "open-meteo" | "demo" | string;
+  hours: string[];
+  features: Feature<Point, WindProps>[];
+}
+
+export interface FireStats {
+  days: number;
+  total: number;
+  frp_total: number;
+  daily: { date: string; count: number; frp: number }[];
+  by_source: Record<string, number>;
+}
+
+export type PublicStatus = Omit<Status, "runs"> & { runs?: IngestRun[] };
+
+// ------------------------------------------------------------------ push
+
+export interface VapidKey {
+  enabled: boolean;
+  key: string | null;
+}
+
+export interface PushDevice {
+  id: number | string;
+  endpoint_host: string;
+  user_agent: string | null;
+  created_at: string | null;
 }
 
 // ------------------------------------------------------------------ admin

@@ -6,9 +6,11 @@ import { useAuth } from "../../auth/AuthContext";
 import { errorMessage } from "../../components/Toast";
 import { Button, Input } from "../../components/ui";
 import { AuthLayout, safeNext } from "./AuthLayout";
+import { useT } from "../../i18n";
 
 export default function Login() {
   const { me, signIn, loading } = useAuth();
+  const { t } = useT();
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const next = safeNext(params.get("next"));
@@ -36,32 +38,37 @@ export default function Login() {
 
   return (
     <AuthLayout
-      docTitle="Sign in"
-      title="Sign in to Firealerts"
-      lead="Monitor fires, forecasts and alerts for your organisation."
+      docTitle={t("common.signIn")}
+      title={t("auth.login.title")}
+      lead={t("auth.login.lead")}
       footer={
         <>
           {me?.registration_open !== false ? (
             <>
-              New here? <Link to={`/register${params.get("next") ? `?next=${encodeURIComponent(next)}` : ""}`}>Create an account</Link>
+              {t("auth.login.newHere")} <Link to={`/register${params.get("next") ? `?next=${encodeURIComponent(next)}` : ""}`}>{t("auth.login.createAccount")}</Link>
             </>
           ) : (
-            "Registration is by invitation."
+            t("auth.login.byInvitation")
           )}
           {me && !me.auth_required && (
             <div className="mt-8">
-              Or <Link to="/app">continue without signing in</Link>
+              {t("auth.login.or")} <Link to="/app">{t("auth.login.continue")}</Link>
+            </div>
+          )}
+          {me?.auth_required !== false && (
+            <div className="mt-8">
+              <Link to="/live">{t("auth.login.publicMap")}</Link>
             </div>
           )}
         </>
       }
     >
       <form onSubmit={submit} noValidate={false}>
-        <Input label="E-mail" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} autoFocus />
+        <Input label={t("common.email")} type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} autoFocus />
         <Input
           label={
             <span className="row between" style={{ width: "100%" }}>
-              Password <Link to="/forgot-password" className="small" style={{ fontWeight: 500 }}>Forgot password?</Link>
+              {t("common.password")} <Link to="/forgot-password" className="small" style={{ fontWeight: 500 }}>{t("auth.login.forgot")}</Link>
             </span>
           }
           type="password"
@@ -72,7 +79,7 @@ export default function Login() {
         />
         {error && <div className="form-error" role="alert">{error}</div>}
         <Button type="submit" variant="primary" size="lg" block loading={busy}>
-          Sign in
+          {t("common.signIn")}
         </Button>
       </form>
     </AuthLayout>

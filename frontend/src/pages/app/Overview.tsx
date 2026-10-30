@@ -8,9 +8,11 @@ import { IconMap, IconPlus, IconTree } from "../../components/Icons";
 import { useToast } from "../../components/Toast";
 import { Badge, Button, ButtonLink, Card, DangerPill, EmptyState, ErrorState, Loading, SeverityChip, Tile } from "../../components/ui";
 import { SENSOR_GROUPS, SEVERITY_COLORS, SEVERITY_ORDER } from "../../lib/constants";
-import { fmtCompact, fmtDate, fmtHa, fmtNum, fmtPct, humanize, timeAgo } from "../../lib/format";
+import { fmtCompact, fmtDayMonth, fmtHa, fmtNum, fmtPct, timeAgo } from "../../lib/format";
+import { syncMessage } from "../../lib/sync";
 import { destination } from "../../lib/geo";
 import { useAsync, useBusy, useDocumentTitle } from "../../lib/useAsync";
+import { tEnum, useT } from "../../i18n";
 
 /** Count detections within each asset's threat radius (bbox-expanded, then point-to-centroid sanity). */
 function firesNear(assets: AssetListItem[], dets: DetectionCollection | undefined): Map<number, number> {
@@ -33,7 +35,8 @@ function firesNear(assets: AssetListItem[], dets: DetectionCollection | undefine
 }
 
 export default function Overview() {
-  useDocumentTitle("Overview");
+  const { t } = useT();
+  useDocumentTitle(t("nav.overview"));
   const { me, can } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
@@ -59,7 +62,7 @@ export default function Overview() {
     run("ingest", async () => {
       try {
         const r = await system.ingest();
-        toast.success(`Sync complete: ${fmtNum(r.inserted)} new detections${r.alerts ? `, ${r.alerts} alerts` : ""}.`);
+        toast.success(syncMessage(r));
         await Promise.all([status.reload(), dets.reload(), assets.reload(), latest.reload(), stats.reload(), active.reload()]);
         window.dispatchEvent(new Event("fa:alerts-changed"));
       } catch (err) {
@@ -83,7 +86,7 @@ export default function Overview() {
   }, [status.data]);
   const lastRun = status.data?.runs[0];
   const noAssets = assets.data && assets.data.length === 0;
-  const greeting = me?.user?.name ? `Welcome back, ${me.user.name.split(" ")[0]}` : "Overview";
+  const greeting = me?.user?.name ? t("overview.welcome", { name: me.user.name.split(" ")[0] }) : t("nav.overview");
 
   return (
     <div className="page">
@@ -91,32 +94,32 @@ export default function Overview() {
         <div>
           <h1>{greeting}</h1>
           <p>
-            {me?.org?.name} · {fmtNum(status.data?.detections_24h)} detections worldwide in the last 24 h
-            {status.data?.latest_detection ? ` · latest ${timeAgo(status.data.latest_detection)}` : ""}
+            {me?.org?.name} · {t("overview.worldwide", { n: fmtNum(status.data?.detections_24h) })}
+            {status.data?.latest_detection ? ` · ${t("overview.latest", { ago: timeAgo(status.data.latest_detection) })}` : ""}
           </p>
         </div>
         <div className="row wrap">
           {can("admin") && (
-            <Button loading={busy === "ingest"} onClick={ingest} title="Fetch new satellite data now">
-              Sync satellites now
+            <Button loading={busy === "ingest"} onClick={ingest} title={t("sync.title")}>
+              {t("sync.now")}
             </Button>
           )}
           <ButtonLink to="/app/map" icon={<IconMap />}>
-            Live map
+            {t("nav.map")}
           </ButtonLink>
           {can("member") && (
             <ButtonLink to="/app/assets?new=1" variant="primary" icon={<IconPlus />}>
-              Add asset
+              {t("assets.add")}
             </ButtonLink>
           )}
         </div>
       </div>
 
       <div className="grid-4 mb-16">
-        <Tile label="Assets monitored" value={assets.data ? fmtNum(assets.data.length) : "…"} foot={me?.org?.limits?.assets != null ? `of ${me.org.limits.assets} on your plan` : "Unlimited plan"} to="/app/assets" accent="#5aa9ff" />
-        <Tile label="Area protected" value={assets.data ? fmtCompact(totalHa) : "…"} unit="ha" foot={`${fmtNum((totalHa / 100) | 0)} km²`} accent="#3ecf8e" />
+        <Tile label={t("overview.assetsMonitored")} value={assets.data ? fmtNum(assets.data.length) : "…"} foot={me?.org?.limits?.assets != null ? t("overview.ofPlan", { n: me.org.limits.assets }) : t("overview.unlimitedPlan")} to="/app/assets" accent="#5aa9ff" />
+        <Tile label={t("overview.areaProtected")} value={assets.data ? fmtCompact(totalHa) : "…"} unit="ha" foot={`${fmtNum((totalHa / 100) | 0)} km²`} accent="#3ecf8e" />
         <Tile
-          label="Open alerts"
+          label={t("overview.openAlerts")}
           value={active.data ? fmtNum(active.data.total) : "…"}
           to="/app/alerts?status=active"
           accent={openBySev.critical ? SEVERITY_COLORS.critical : openBySev.high ? SEVERITY_COLORS.high : "#ffd84d"}
@@ -128,54 +131,54 @@ export default function Overview() {
                 .map((s) => (
                   <span key={s} className="row" style={{ gap: 4 }}>
                     <span className="status-dot" style={{ background: SEVERITY_COLORS[s] }} />
-                    {openBySev[s]} {s}
+                    {openBySev[s]} {tEnum("severity", s)}
                   </span>
                 ))}
-              {active.data && !active.data.total && "All clear"}
+              {active.data && !active.data.total && t("overview.allClear")}
             </span>
           }
         />
-        <Tile label="Fires near assets · 24 h" value={dets.data && assets.data ? fmtNum(nearTotal) : "…"} foot={`${assetsNear} asset${assetsNear === 1 ? "" : "s"} within threat radius`} accent="#ff6a2b" />
+        <Tile label={t("overview.firesNear")} value={dets.data && assets.data ? fmtNum(nearTotal) : "…"} foot={t("overview.assetsNear", { count: assetsNear })} accent="#ff6a2b" />
       </div>
 
       {noAssets && (
         <Card className="mb-16">
           <EmptyState
             icon={<IconTree size={20} />}
-            title="Add your first forest"
+            title={t("overview.firstForest")}
             action={
               can("member") ? (
                 <ButtonLink to="/app/assets?new=1" variant="primary" icon={<IconPlus />}>
-                  Draw or upload an area
+                  {t("overview.drawOrUpload")}
                 </ButtonLink>
               ) : undefined
             }
           >
-            Draw a polygon on the map or upload a KML, GeoJSON or Shapefile. Firealerts will watch it for fires, forecast danger and track vegetation health.
+            {t("overview.firstForestBody")}
           </EmptyState>
         </Card>
       )}
 
       <div className="detail-layout overview-layout">
         <div className="stack loose">
-          <Card title="Assets by risk today" sub="Fire Weather Index & ignition probability, today's forecast" flush actions={<Link to="/app/assets" className="small">All assets →</Link>}>
+          <Card title={t("overview.byRisk")} sub={t("overview.byRiskSub")} flush actions={<Link to="/app/assets" className="small">{t("overview.allAssets")}</Link>}>
             {assets.error ? (
               <div className="card-body"><ErrorState error={assets.error} onRetry={assets.reload} /></div>
             ) : !assets.data ? (
               <Loading />
             ) : assets.data.length === 0 ? (
-              <div className="card-body muted small">No assets yet.</div>
+              <div className="card-body muted small">{t("assets.noneYet")}</div>
             ) : (
               <div className="table-wrap">
                 <table className="table">
                   <thead>
                     <tr>
-                      <th>Asset</th>
-                      <th>Danger</th>
+                      <th>{t("overview.col.asset")}</th>
+                      <th>{t("overview.col.danger")}</th>
                       <th className="right">FWI</th>
-                      <th className="right">Ignition</th>
-                      <th className="right">Fires 24 h</th>
-                      <th className="right">Alerts</th>
+                      <th className="right">{t("overview.col.ignition")}</th>
+                      <th className="right">{t("overview.col.fires")}</th>
+                      <th className="right">{t("nav.alerts")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -189,10 +192,10 @@ export default function Overview() {
                               {a.name}
                             </Link>
                             <div className="tiny muted">
-                              {humanize(a.kind)} · {fmtHa(a.area_ha)}
+                              {tEnum("kind", a.kind)} · {fmtHa(a.area_ha)}
                             </div>
                           </td>
-                          <td>{a.risk_today ? <DangerPill danger={a.risk_today.danger} /> : <span className="muted small">Pending</span>}</td>
+                          <td>{a.risk_today ? <DangerPill danger={a.risk_today.danger} /> : <span className="muted small">{t("overview.pending")}</span>}</td>
                           <td className="right">{fmtNum(a.risk_today?.fwi, 0)}</td>
                           <td className="right">{fmtPct(a.risk_today?.ignition_p, 0)}</td>
                           <td className="right">{near.get(a.id) ? <b style={{ color: "var(--accent)" }}>{near.get(a.id)}</b> : <span className="muted">0</span>}</td>
@@ -205,16 +208,16 @@ export default function Overview() {
             )}
           </Card>
 
-          <Card title="Alerts per day" sub={`Last 30 days · ${fmtNum(stats.data ? Object.values(stats.data.by_type).reduce((a, b) => a + b, 0) : 0)} total`}>
+          <Card title={t("overview.perDay")} sub={t("overview.perDaySub", { n: fmtNum(stats.data ? Object.values(stats.data.by_type).reduce((a, b) => a + b, 0) : 0) })}>
             {stats.data ? (
               <>
-                <BarChart data={daily} height={150} ariaLabel="Alerts per day, last 30 days" formatLabel={(l) => fmtDate(l).slice(0, 6)} />
+                <BarChart data={daily} height={150} ariaLabel={t("overview.perDayAria")} formatLabel={(l) => fmtDayMonth(l)} />
                 <div className="row wrap mt-12" style={{ gap: 14 }}>
                   {Object.entries(stats.data.by_type)
                     .filter(([, v]) => v)
                     .map(([k, v]) => (
                       <span key={k} className="small muted">
-                        {humanize(k)} <b style={{ color: "var(--text)" }}>{v}</b>
+                        {tEnum("alertType", k)} <b style={{ color: "var(--text)" }}>{v}</b>
                       </span>
                     ))}
                 </div>
@@ -228,11 +231,11 @@ export default function Overview() {
         </div>
 
         <div className="stack loose">
-          <Card title="Latest alerts" flush actions={<Link to="/app/alerts" className="small">Inbox →</Link>}>
+          <Card title={t("overview.latestAlerts")} flush actions={<Link to="/app/alerts" className="small">{t("overview.inbox")}</Link>}>
             {!latest.data ? (
               <Loading />
             ) : latest.data.items.length === 0 ? (
-              <EmptyState title="No alerts yet">New fires, threats and high-danger days for your assets will show up here.</EmptyState>
+              <EmptyState title={t("overview.noAlerts")}>{t("overview.noAlertsBody")}</EmptyState>
             ) : (
               <div className="list-rows">
                 {latest.data.items.map((a) => (
@@ -243,8 +246,8 @@ export default function Overview() {
                     </div>
                     <div className="strong small mt-4 truncate">{a.title}</div>
                     <div className="tiny muted truncate">
-                      {humanize(a.type)}
-                      {a.asset_name ? ` · ${a.asset_name}` : ""} · {a.status}
+                      {tEnum("alertType", a.type)}
+                      {a.asset_name ? ` · ${a.asset_name}` : ""} · {tEnum("alertStatus", a.status).toLowerCase()}
                     </div>
                   </Link>
                 ))}
@@ -252,7 +255,7 @@ export default function Overview() {
             )}
           </Card>
 
-          <Card title="Data feeds" sub={lastRun ? `Last sync ${timeAgo(lastRun.finished_at)} · ${lastRun.mode} mode · every ${status.data?.poll_minutes} min` : "No sync yet"} actions={<Link to="/app/data" className="small">Sources →</Link>}>
+          <Card title={t("overview.feeds")} sub={lastRun ? t("overview.feedsSub", { ago: timeAgo(lastRun.finished_at), mode: lastRun.mode, n: status.data?.poll_minutes ?? "" }) : t("overview.noSync")} actions={<Link to="/app/data" className="small">{t("overview.sources")}</Link>}>
             {status.data ? (
               <div className="stack tight">
                 {groups.map((g) => (
@@ -271,7 +274,7 @@ export default function Overview() {
                 ) : null}
                 {!lastRun && can("admin") && (
                   <Button className="mt-8" variant="primary" loading={busy === "ingest"} onClick={ingest}>
-                    Run first sync
+                    {t("sync.first")}
                   </Button>
                 )}
               </div>

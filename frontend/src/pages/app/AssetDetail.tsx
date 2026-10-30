@@ -1,7 +1,7 @@
 import type { Map as MlMap, MapLayerMouseEvent } from "maplibre-gl";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { assets as assetsApi } from "../../api/endpoints";
+import { assets as assetsApi, fire } from "../../api/endpoints";
 import type { Asset, AssetSummary } from "../../api/types";
 import { useAuth } from "../../auth/AuthContext";
 import { AssetFields, valuesFromAsset, valuesToPayload } from "../../components/AssetFields";
@@ -10,7 +10,9 @@ import { IconChevronRight, IconDownload, IconEdit, IconFile, IconTrash, IconX } 
 import { useToast } from "../../components/Toast";
 import { Badge, Button, Card, ErrorState, Loading, Notice, SeverityChip, Switch, Tabs, Tile, useConfirm } from "../../components/ui";
 import { CONFIDENCE_LABELS, dangerInfo, prioColor } from "../../lib/constants";
-import { compass, fmtHa, fmtKm, fmtNum, humanize, timeAgo } from "../../lib/format";
+import { compass, fmtDateTime, fmtHa, fmtKm, fmtNum, timeAgo } from "../../lib/format";
+import { t as tr, tEnum, useT } from "../../i18n";
+import { WindPanel, useWindLayer, useWindToggle } from "../../map/WindLayer";
 import { circlePolygon } from "../../lib/geo";
 import { useAsync, useDocumentTitle } from "../../lib/useAsync";
 import { MapView } from "../../map/MapView";
@@ -23,18 +25,19 @@ type Tab = "risk" | "vegetation" | "imagery" | "burn" | "history" | "loss" | "ex
 function SettingsPanel({ asset, onSaved }: { asset: Asset; onSaved: (a: Asset) => void }) {
   const { can } = useAuth();
   const toast = useToast();
+  const { t } = useT();
   const navigate = useNavigate();
   const { confirm, dialog } = useConfirm();
   const [values, setValues] = useState<AssetFormValues>(() => valuesFromAsset(asset));
   const [busy, setBusy] = useState(false);
   const editable = can("member");
   const save = async () => {
-    if (!values.name.trim()) return toast.show("Name can't be empty.", "warning");
+    if (!values.name.trim()) return toast.show(t("asset.nameEmpty"), "warning");
     setBusy(true);
     try {
       const a = await assetsApi.update(asset.id, valuesToPayload(values));
       onSaved(a);
-      toast.success("Asset settings saved.");
+      toast.success(t("asset.saved"));
     } catch (e) {
       toast.error(e);
     } finally {
@@ -44,17 +47,17 @@ function SettingsPanel({ asset, onSaved }: { asset: Asset; onSaved: (a: Asset) =
   const toggleActive = async (v: boolean) => {
     try {
       onSaved(await assetsApi.update(asset.id, { active: v }));
-      toast.success(v ? "Monitoring resumed." : "Monitoring paused: no alerts will be sent for this asset.");
+      toast.success(v ? t("asset.resumed") : t("asset.pausedToast"));
     } catch (e) {
       toast.error(e);
     }
   };
   const remove = async () => {
-    const ok = await confirm({ title: `Delete ${asset.name}?`, body: "This removes the asset, its vegetation and risk history. Alerts are kept but unlinked. This can't be undone.", confirmLabel: "Delete asset", danger: true });
+    const ok = await confirm({ title: t("asset.deleteTitle", { name: asset.name }), body: t("asset.deleteBody"), confirmLabel: t("asset.delete"), danger: true });
     if (!ok) return;
     try {
       await assetsApi.remove(asset.id);
-      toast.success(`${asset.name} deleted.`);
+      toast.success(t("asset.deleted", { name: asset.name }));
       navigate("/app/assets");
     } catch (e) {
       toast.error(e);
@@ -62,26 +65,26 @@ function SettingsPanel({ asset, onSaved }: { asset: Asset; onSaved: (a: Asset) =
   };
   return (
     <div className="stack loose">
-      {!editable && <Notice kind="info">You have view-only access to this organisation.</Notice>}
+      {!editable && <Notice kind="info">{t("asset.viewOnly")}</Notice>}
       <fieldset disabled={!editable} style={{ border: 0, padding: 0, margin: 0 }}>
         <AssetFields value={values} onChange={setValues} />
       </fieldset>
       {editable && (
         <div className="row between wrap">
-          <Switch checked={asset.active} onChange={toggleActive} label={asset.active ? "Monitoring active" : "Monitoring paused"} />
+          <Switch checked={asset.active} onChange={toggleActive} label={asset.active ? t("asset.monitoringOn") : t("asset.monitoringOff")} />
           <div className="row">
             <Button variant="danger" icon={<IconTrash />} onClick={remove}>
-              Delete asset
+              {t("asset.delete")}
             </Button>
             <Button variant="primary" loading={busy} onClick={save}>
-              Save changes
+              {t("common.saveChanges")}
             </Button>
           </div>
         </div>
       )}
       {Object.keys(asset.properties ?? {}).length > 0 && (
         <div>
-          <div className="section-title">Imported attributes</div>
+          <div className="section-title">{t("asset.imported")}</div>
           <dl className="kv">
             {Object.entries(asset.properties).map(([k, v]) => (
               <div key={k} style={{ display: "contents" }}>
@@ -101,6 +104,7 @@ export default function AssetDetail() {
   const { id: idParam } = useParams();
   const id = Number(idParam);
   const toast = useToast();
+  const { t } = useT();
   const asset = useAsync(() => assetsApi.get(id), [id]);
   const summary = useAsync(() => assetsApi.summary(id), [id]);
   const [days, setDays] = useState(7);
@@ -110,8 +114,10 @@ export default function AssetDetail() {
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [opacity, setOpacity] = useState(0.9);
   const [reporting, setReporting] = useState(false);
+  const [windOn, setWindOn] = useWindToggle();
+  const wind = useWindLayer(map, windOn, (bbox, n, signal) => fire.wind(bbox, n, signal), 8);
   const a = asset.data;
-  useDocumentTitle(a?.name ?? "Asset");
+  useDocumentTitle(a?.name ?? t("overview.col.asset"));
 
   const onReady = useCallback((m: MlMap) => {
     for (const s of ["asset", "asset-buffer", "asset-threat", "near-inc"]) ensureSource(m, s);
@@ -124,12 +130,12 @@ export default function AssetDetail() {
     m.on("click", "dets-pts", (e: MapLayerMouseEvent) => {
       const p = e.features?.[0]?.properties as Record<string, string | number> | undefined;
       if (!p) return;
-      popup([e.lngLat.lng, e.lngLat.lat], `<b>${esc(p.source)}</b><br>${esc(new Date(String(p.acq_time)).toLocaleString())}<br>FRP ${esc(fmtNum(Number(p.frp), 1))} MW · ${esc(CONFIDENCE_LABELS[String(p.confidence)] ?? "")} confidence<br>${Number(p.distance_km) === 0 ? "Inside the asset" : `${esc(p.distance_km)} km from the boundary`}`, m);
+      popup([e.lngLat.lng, e.lngLat.lat], `<b>${esc(p.source)}</b><br>${esc(fmtDateTime(String(p.acq_time)))}<br>${esc(tr("popup.frpConf", { frp: fmtNum(Number(p.frp), 1), conf: CONFIDENCE_LABELS[String(p.confidence)] ?? "" }))}<br>${esc(Number(p.distance_km) === 0 ? tr("asset.popup.inside") : tr("asset.popup.fromBoundary", { km: String(p.distance_km) }))}`, m);
     });
     m.on("click", "near-inc", (e: MapLayerMouseEvent) => {
       const p = e.features?.[0]?.properties as Record<string, string | number> | undefined;
       if (!p) return;
-      popup([e.lngLat.lng, e.lngLat.lat], `<b>Incident · priority ${esc(p.priority)}</b><br>${esc(p.count)} pixels · ${esc(fmtNum(Number(p.frp_sum)))} MW FRP<br>${esc(fmtKm(Number(p.distance_km)))} ${esc(compass(Number(p.bearing_deg)))}<br><a href="/app/map?incident=${esc(p.id)}">Spread forecast →</a>`, m);
+      popup([e.lngLat.lng, e.lngLat.lat], `<b>${esc(tr("asset.popup.incident", { p: String(p.priority) }))}</b><br>${esc(tr("asset.popup.pixels", { n: String(p.count), frp: fmtNum(Number(p.frp_sum)) }))}<br>${esc(fmtKm(Number(p.distance_km)))} ${esc(compass(Number(p.bearing_deg)))}<br><a href="/app/map?incident=${esc(p.id)}">${esc(tr("asset.popup.forecast"))}</a>`, m);
     });
     for (const l of ["dets-pts", "near-inc"]) {
       m.on("mouseenter", l, () => (m.getCanvas().style.cursor = "pointer"));
@@ -175,12 +181,12 @@ export default function AssetDetail() {
       <div className="page">
         <ErrorState error={asset.error} onRetry={asset.reload} />
         <Link to="/app/assets" className="small mt-12" style={{ display: "inline-block" }}>
-          ← Back to assets
+          ← {t("asset.back")}
         </Link>
       </div>
     );
   }
-  if (!a) return <Loading label="Loading asset" />;
+  if (!a) return <Loading label={t("asset.loading")} />;
 
   const s: AssetSummary | undefined = summary.data;
   const today = s?.risk.find((r) => r.date === new Date().toISOString().slice(0, 10)) ?? s?.risk.find((r) => r.forecast);
@@ -191,7 +197,7 @@ export default function AssetDetail() {
     try {
       await assetsApi.openReport(a.id, win);
     } catch (e) {
-      toast.error(e, "Report failed");
+      toast.error(e, t("asset.reportFailed"));
     } finally {
       setReporting(false);
     }
@@ -200,7 +206,7 @@ export default function AssetDetail() {
   return (
     <div className="page">
       <div className="breadcrumb">
-        <Link to="/app/assets">Forests &amp; assets</Link>
+        <Link to="/app/assets">{t("nav.assets")}</Link>
         <IconChevronRight size={12} />
         <span>{a.name}</span>
       </div>
@@ -208,15 +214,15 @@ export default function AssetDetail() {
         <div style={{ minWidth: 0 }}>
           <div className="row wrap">
             <h1>{a.name}</h1>
-            {!a.active && <Badge kind="warn">Paused</Badge>}
+            {!a.active && <Badge kind="warn">{t("assets.paused")}</Badge>}
             {today && (
               <span className="danger-pill" style={{ background: dangerInfo(today.danger).color, color: today.danger === "extreme" ? "#fff" : "#14161c" }}>
-                {dangerInfo(today.danger).label} danger today
+                {t("asset.dangerToday", { danger: dangerInfo(today.danger).label })}
               </span>
             )}
           </div>
           <div className="small muted mt-4">
-            {humanize(a.kind)} · {fmtHa(a.area_ha)} · {a.centroid[1].toFixed(4)}, {a.centroid[0].toFixed(4)} · buffer {a.buffer_km} km · threat radius {a.threat_radius_km} km
+            {tEnum("kind", a.kind)} · {fmtHa(a.area_ha)} · {a.centroid[1].toFixed(4)}, {a.centroid[0].toFixed(4)} · {t("asset.bufferInfo", { b: a.buffer_km, r: a.threat_radius_km })}
           </div>
           {a.tags.length > 0 && (
             <div className="row wrap mt-8" style={{ gap: 4 }}>
@@ -231,43 +237,44 @@ export default function AssetDetail() {
         </div>
         <div className="row wrap">
           <Button icon={<IconFile />} loading={reporting} onClick={openReport}>
-            Situation report
+            {t("asset.report")}
           </Button>
           <Button icon={<IconDownload />} onClick={() => assetsApi.downloadTimeseries(a.id).catch((e) => toast.error(e))}>
-            Time series CSV
+            {t("asset.csv")}
           </Button>
           <Button icon={<IconEdit />} onClick={() => setTab("settings")}>
-            Edit
+            {t("common.edit")}
           </Button>
         </div>
       </div>
 
       <div className="grid-4 mb-16" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
-        <Tile label="Inside · 24 h" value={s ? fmtNum(s.fires.inside_24h) : "…"} accent={s?.fires.inside_24h ? "#ff4d5e" : undefined} foot="detections in the asset" />
-        <Tile label="Buffer · 24 h" value={s ? fmtNum(s.fires.buffer_24h) : "…"} accent={s?.fires.buffer_24h ? "#ff9a3c" : undefined} foot={`within ${a.buffer_km} km`} />
-        <Tile label="Within 25 km · 7 d" value={s ? fmtNum(s.fires.within_25km_7d) : "…"} foot="detections" />
-        <Tile label="Nearest fire" value={s ? (s.fires.nearest ? fmtKm(s.fires.nearest.km) : "None") : "…"} foot={s?.fires.nearest ? `${timeAgo(s.fires.nearest.acq_time)} · ${s.fires.nearest.source}` : "in the last 7 days"} />
-        <Tile label="Latest NDVI" value={s ? fmtNum(s.vegetation.latest?.ndvi, 2) : "…"} foot={s?.vegetation.latest ? s.vegetation.latest.date : "no scenes yet"} accent="#3ecf8e" />
-        <Tile label="Open alerts" value={s ? fmtNum(s.open_alerts.length) : "…"} to={`/app/alerts?asset_id=${a.id}&status=active`} />
+        <Tile label={t("asset.tile.inside")} value={s ? fmtNum(s.fires.inside_24h) : "…"} accent={s?.fires.inside_24h ? "#ff4d5e" : undefined} foot={t("asset.tile.insideFoot")} />
+        <Tile label={t("asset.tile.buffer")} value={s ? fmtNum(s.fires.buffer_24h) : "…"} accent={s?.fires.buffer_24h ? "#ff9a3c" : undefined} foot={t("asset.tile.within", { km: a.buffer_km })} />
+        <Tile label={t("asset.tile.within25")} value={s ? fmtNum(s.fires.within_25km_7d) : "…"} foot={t("stats.detections").toLowerCase()} />
+        <Tile label={t("asset.tile.nearest")} value={s ? (s.fires.nearest ? fmtKm(s.fires.nearest.km) : t("common.none")) : "…"} foot={s?.fires.nearest ? `${timeAgo(s.fires.nearest.acq_time)} · ${s.fires.nearest.source}` : t("asset.tile.last7")} />
+        <Tile label={t("asset.tile.ndvi")} value={s ? fmtNum(s.vegetation.latest?.ndvi, 2) : "…"} foot={s?.vegetation.latest ? s.vegetation.latest.date : t("asset.tile.noScenes")} accent="#3ecf8e" />
+        <Tile label={t("overview.openAlerts")} value={s ? fmtNum(s.open_alerts.length) : "…"} to={`/app/alerts?asset_id=${a.id}&status=active`} />
       </div>
 
       <div className="detail-layout">
         <div className="detail-map">
-          <MapView onReady={onReady} ariaLabel={`Map of ${a.name}`}>
+          <MapView onReady={onReady} ariaLabel={t("asset.mapAria", { name: a.name })} extraLayers={[{ id: "wind", label: t("wind.layer"), description: t("wind.layerDesc"), checked: windOn, onChange: setWindOn }]}>
             <div className="map-overlay" style={{ position: "absolute", top: 12, left: 12, zIndex: 3, padding: 4 }}>
-              <select className="select sm" value={days} onChange={(e) => setDays(+e.target.value)} aria-label="Detection window" style={{ width: "auto" }}>
+              <select className="select sm" value={days} onChange={(e) => setDays(+e.target.value)} aria-label={t("asset.window")} style={{ width: "auto" }}>
                 {[1, 3, 7, 30, 90].map((d) => (
                   <option key={d} value={d}>
-                    Fires · last {d} day{d > 1 ? "s" : ""}
+                    {t("asset.firesLast", { count: d })}
                   </option>
                 ))}
               </select>
             </div>
+            {windOn && <WindPanel state={wind} onClose={() => setWindOn(false)} />}
             {overlay && (
               <div className="map-overlay" style={{ position: "absolute", left: 12, bottom: 30, zIndex: 3, padding: 10, width: 250 }}>
                 <div className="row between">
                   <span className="small strong truncate">{overlay.label}</span>
-                  <button className="close-btn" style={{ width: 22, height: 22 }} onClick={() => setOverlay(null)} aria-label="Remove overlay">
+                  <button className="close-btn" style={{ width: 22, height: 22 }} onClick={() => setOverlay(null)} aria-label={t("asset.removeOverlay")}>
                     <IconX size={12} />
                   </button>
                 </div>
@@ -275,7 +282,7 @@ export default function AssetDetail() {
                   <RampLegend ramp={overlay.ramp} />
                 </div>
                 <label className="row tiny muted mt-8" style={{ gap: 8 }}>
-                  Opacity
+                  {t("asset.opacity")}
                   <input type="range" min={0.2} max={1} step={0.05} value={opacity} onChange={(e) => setOpacity(+e.target.value)} />
                 </label>
               </div>
@@ -283,11 +290,11 @@ export default function AssetDetail() {
           </MapView>
         </div>
         <div className="stack">
-          <Card title="Fires nearby" sub="Active incidents in the last 24 h within the threat radius (or 50 km)" flush>
+          <Card title={t("asset.nearby")} sub={t("asset.nearbySub")} flush>
             {!s ? (
               <Loading />
             ) : s.incidents_nearby.length === 0 ? (
-              <div className="card-body small muted">No active incidents nearby.</div>
+              <div className="card-body small muted">{t("asset.noNearby")}</div>
             ) : (
               <div className="list-rows">
                 {s.incidents_nearby.map((i) => {
@@ -302,11 +309,11 @@ export default function AssetDetail() {
                           {fmtKm(i.distance_km)} {i.distance_km > 0 ? compass(i.bearing_deg) : ""} · {i.count} px · {fmtNum(i.frp_sum)} MW
                         </div>
                         <div className="tiny muted">
-                          {i.status} · seen {timeAgo(i.last_seen)} · {fmtHa(i.area_ha)}
+                          {tEnum("incStatus", i.status)} · {t("live.seen", { ago: timeAgo(i.last_seen) })} · {fmtHa(i.area_ha)}
                         </div>
                       </div>
                       <Link className="btn sm" to={`/app/map?incident=${i.id}`}>
-                        Forecast
+                        {t("asset.forecast")}
                       </Link>
                     </div>
                   );
@@ -314,11 +321,11 @@ export default function AssetDetail() {
               </div>
             )}
           </Card>
-          <Card title="Open alerts" flush actions={<Link className="small" to={`/app/alerts?asset_id=${a.id}`}>All →</Link>}>
+          <Card title={t("overview.openAlerts")} flush actions={<Link className="small" to={`/app/alerts?asset_id=${a.id}`}>{t("common.seeAll")}</Link>}>
             {!s ? (
               <Loading />
             ) : s.open_alerts.length === 0 ? (
-              <div className="card-body small muted">No open alerts for this asset.</div>
+              <div className="card-body small muted">{t("asset.noAlerts")}</div>
             ) : (
               <div className="list-rows">
                 {s.open_alerts.slice(0, 5).map((x) => (
@@ -338,16 +345,16 @@ export default function AssetDetail() {
         <Tabs
           value={tab}
           onChange={setTab}
-          label="Asset analysis"
+          label={t("asset.analysis")}
           tabs={[
-            { id: "risk", label: "Fire danger" },
-            { id: "vegetation", label: "Vegetation" },
-            { id: "imagery", label: "Imagery" },
-            { id: "burn", label: "Burn severity" },
-            { id: "history", label: "Fire history" },
-            { id: "loss", label: "Forest loss" },
-            { id: "exposure", label: "Exposure" },
-            { id: "settings", label: "Settings" },
+            { id: "risk", label: t("asset.tab.risk") },
+            { id: "vegetation", label: t("asset.tab.vegetation") },
+            { id: "imagery", label: t("asset.tab.imagery") },
+            { id: "burn", label: t("asset.tab.burn") },
+            { id: "history", label: t("asset.tab.history") },
+            { id: "loss", label: t("asset.tab.loss") },
+            { id: "exposure", label: t("asset.tab.exposure") },
+            { id: "settings", label: t("nav.settings") },
           ]}
         />
         <div className="mt-16" role="tabpanel">

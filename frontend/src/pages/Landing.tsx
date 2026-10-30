@@ -4,23 +4,33 @@ import { system } from "../api/endpoints";
 import type { PlanLimits } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import {
-  FlameLogo, IconArrowRight, IconBell, IconCheck, IconClock, IconLeaf, IconPlug, IconSatellite, IconShield, IconTarget, IconTrendingUp, IconWind,
+  FlameLogo, IconArrowRight, IconBell, IconCheck, IconClock, IconLeaf, IconMap, IconPlug, IconSatellite, IconShield, IconTarget, IconTrendingUp, IconWind,
 } from "../components/Icons";
 import { useCheckout } from "../components/PlanLimitNotice";
 import { fmtCompact, fmtNum, timeAgo } from "../lib/format";
 import { useAsync, useDocumentTitle } from "../lib/useAsync";
 import { isGeoSource } from "../lib/constants";
+import { LanguageSelect } from "../components/LanguageSwitcher";
+import { t, useT } from "../i18n";
+import type { MsgKey } from "../i18n";
 import "../styles/landing.css";
 
-const PLAN_COPY: Record<string, { price: string; blurb: string; highlight?: boolean; extras: string[] }> = {
-  free: { price: "$0", blurb: "For a single property or a pilot.", extras: ["Detection & threat alerts", "7-day fire-danger outlook", "E-mail, Slack & webhook alerts"] },
-  pro: { price: "", blurb: "For forestry companies and fire brigades.", highlight: true, extras: ["Everything in Free", "Sentinel-2 vegetation & burn severity", "SMS, WhatsApp & PagerDuty", "API access & exports"] },
-  enterprise: { price: "Custom", blurb: "For agencies and large landholders.", extras: ["Everything in Pro", "Unlimited assets & seats", "Earth Engine & GFW integrations", "SSO & dedicated support"] },
-};
-
-function limit(v: number | null, unit: string) {
-  return v == null ? `Unlimited ${unit}` : `${fmtNum(v)} ${unit}`;
+function planCopy(key: string): { price: string; blurb: string; highlight?: boolean; extras: string[] } | null {
+  if (key === "free") return { price: "$0", blurb: t("landing.plan.free.blurb"), extras: [t("landing.plan.free.x1"), t("landing.plan.free.x2"), t("landing.plan.free.x3")] };
+  if (key === "pro") return { price: "", blurb: t("landing.plan.pro.blurb"), highlight: true, extras: [t("landing.plan.pro.x1"), t("landing.plan.pro.x2"), t("landing.plan.pro.x3"), t("landing.plan.pro.x4")] };
+  if (key === "enterprise") return { price: t("landing.plan.enterprise.price"), blurb: t("landing.plan.enterprise.blurb"), extras: [t("landing.plan.enterprise.x1"), t("landing.plan.enterprise.x2"), t("landing.plan.enterprise.x3"), t("landing.plan.enterprise.x4")] };
+  return null;
 }
+
+function limit(v: number | null, unlimitedKey: MsgKey, countKey: MsgKey) {
+  return v == null ? t(unlimitedKey) : t(countKey, { count: v });
+}
+
+/** Channels the landing grid always lists, even against an older server's meta. */
+const EXTRA_INTEGRATIONS: { key: string; labelKey: MsgKey; mark: string }[] = [
+  { key: "twilio_voice", labelKey: "landing.integ.voice", mark: "☎" },
+  { key: "push", labelKey: "landing.integ.push", mark: "📱" },
+];
 
 function HeroVisual() {
   // A stylised console preview: works offline (no tiles) and on any screen.
@@ -36,7 +46,7 @@ function HeroVisual() {
         <span className="hv-dot" style={{ background: "#ff5f57" }} />
         <span className="hv-dot" style={{ background: "#febc2e" }} />
         <span className="hv-dot" style={{ background: "#28c840" }} />
-        <span className="hv-url">app.firealerts · Live map</span>
+        <span className="hv-url">app.firealerts · {t("nav.map")}</span>
       </div>
       <div className="hv-body">
         <div className="hv-side">
@@ -65,7 +75,7 @@ function HeroVisual() {
           <path d="M-10 190 C 60 150, 120 210, 190 180 S 320 120, 490 150" fill="none" stroke="#1d2533" strokeWidth="18" />
           <path d="M40 40 C 90 60, 150 30, 200 60 S 300 80, 330 40" fill="none" stroke="#18202c" strokeWidth="10" />
           <polygon points="60,60 170,52 190,130 150,150 70,138" fill="rgba(90,169,255,.08)" stroke="#5aa9ff" strokeWidth="1.5" strokeDasharray="4 3" />
-          <text x="66" y="74" fill="#5aa9ff" fontSize="9" fontFamily="Inter, sans-serif">Sierra Norte forest · 4,120 ha</text>
+          <text x="66" y="74" fill="#5aa9ff" fontSize="9" fontFamily="Inter, sans-serif">{t("landing.hv.asset", { ha: "4,120" })}</text>
           {[["#6a0d47", 70], ["#a1124a", 54], ["#e0244a", 40], ["#ff6a2b", 28], ["#ffd166", 16]].map(([c, r], i) => (
             <ellipse key={i} cx={306 + i * 2} cy={158 - i * 1.5} rx={Number(r) * 1.35} ry={Number(r) * 0.8} fill={i === 4 ? "rgba(255,209,102,.18)" : "none"} stroke={String(c)} strokeWidth={i === 0 ? 1.2 : 1.8} strokeDasharray={i === 0 ? "3 3" : undefined} transform={`rotate(-18 306 158)`} />
           ))}
@@ -78,8 +88,8 @@ function HeroVisual() {
           <g transform="translate(232 54)">
             <rect width="150" height="44" rx="7" fill="rgba(18,21,28,.95)" stroke="#323949" />
             <circle cx="14" cy="15" r="4" fill="#ff4d5e" />
-            <text x="24" y="18" fill="#e7e9ee" fontSize="9" fontWeight="600" fontFamily="Inter, sans-serif">Fire may reach forest in ~5 h</text>
-            <text x="12" y="34" fill="#8b93a7" fontSize="8" fontFamily="Inter, sans-serif">Threat · 6.8 km W · P90 ETA 3.2 h</text>
+            <text x="24" y="18" fill="#e7e9ee" fontSize="9" fontWeight="600" fontFamily="Inter, sans-serif">{t("landing.hv.threat")}</text>
+            <text x="12" y="34" fill="#8b93a7" fontSize="8" fontFamily="Inter, sans-serif">{t("landing.hv.threatSub")}</text>
           </g>
         </svg>
       </div>
@@ -88,33 +98,14 @@ function HeroVisual() {
 }
 
 const FEATURES = [
-  {
-    icon: IconSatellite,
-    title: "Multi-satellite detection",
-    body: "Geostationary GOES, Himawari and Meteosat every 10–15 minutes, fused with VIIRS 375 m and MODIS passes. Hotspots are clustered into incidents and ranked by a 0–100 priority score.",
-    points: ["Detection-to-alert in minutes", "Per-sensor provenance", "Global coverage"],
-  },
-  {
-    icon: IconWind,
-    title: "Predictive spread & threat ETA",
-    body: "A terrain-aware ensemble model (Canadian FBP, ESA WorldCover fuels, slope, hourly wind) forecasts P50/P90 perimeters for 1–72 h, and alerts you before the fire reaches your forest.",
-    points: ["P50 / P90 perimeters", "Arrival-time & burn-probability maps", "What-if ignitions anywhere"],
-  },
-  {
-    icon: IconTrendingUp,
-    title: "Fire danger & ignition forecast",
-    body: "The full Canadian Fire Weather Index System run 7 days ahead for every asset, plus a gradient-boosted ignition-probability model trained on the FIRMS archive.",
-    points: ["Daily FWI & danger class", "ML ignition probability", "Risk alerts before bad days"],
-  },
-  {
-    icon: IconLeaf,
-    title: "Sentinel-2 vegetation & burn severity",
-    body: "NDVI, NBR and NDMI time series for each forest from Copernicus Sentinel-2, index overlays on the map, and dNBR burn-severity mapping between any two scenes.",
-    points: ["10–20 m resolution", "Burned-area history", "Forest-loss analytics (GFW / Earth Engine)"],
-  },
-];
+  { icon: IconSatellite, id: "f1" },
+  { icon: IconWind, id: "f2" },
+  { icon: IconTrendingUp, id: "f3" },
+  { icon: IconLeaf, id: "f4" },
+] as const;
 
 export default function Landing() {
+  const { t } = useT();
   useDocumentTitle("");
   const { me, meta } = useAuth();
   const status = useAsync(() => system.status(), []);
@@ -126,7 +117,14 @@ export default function Landing() {
   const signedIn = !!me?.authenticated;
   const openDirect = !!me && !me.auth_required;
   const plans = Object.entries(meta?.plans ?? {}) as [string, PlanLimits][];
-  const integrations = Object.values(meta?.connector_types ?? {});
+  const integrations: { key: string; label: string; mark: string; data: boolean }[] = Object.entries(meta?.connector_types ?? {}).map(([key, c]) => ({
+    key,
+    label: key === "push" ? t("landing.integ.push") : key === "twilio_voice" ? t("landing.integ.voice") : c.label,
+    mark: key === "push" ? "📱" : key === "twilio_voice" ? "☎" : c.label.replace(/[^A-Za-z]/g, "").slice(0, 2).toUpperCase(),
+    data: c.category === "data",
+  }));
+  if (meta) for (const x of EXTRA_INTEGRATIONS) if (!integrations.some((i) => i.key === x.key)) integrations.push({ key: x.key, label: t(x.labelKey), mark: x.mark, data: false });
+  const publicMap = meta?.public_map !== false;
 
   return (
     <div className="landing">
@@ -138,29 +136,31 @@ export default function Landing() {
             </span>
             Firealerts
           </Link>
-          <nav className="lp-links hide-sm" aria-label="Sections">
-            <a href="#features">Product</a>
-            <a href="#sources">Data</a>
-            <a href="#integrations">Integrations</a>
-            <a href="#pricing">Pricing</a>
+          <nav className="lp-links hide-sm" aria-label={t("landing.sections")}>
+            <a href="#features">{t("landing.nav.product")}</a>
+            <a href="#sources">{t("landing.nav.data")}</a>
+            <a href="#integrations">{t("landing.nav.integrations")}</a>
+            <a href="#pricing">{t("landing.nav.pricing")}</a>
+            {publicMap && <Link to="/live">{t("landing.nav.liveMap")}</Link>}
           </nav>
-          <div className="row">
+          <div className="row lp-actions">
+            <LanguageSelect compact />
             {signedIn ? (
               <Link className="btn primary" to="/app">
-                Open the app <IconArrowRight />
+                {t("common.openApp")} <IconArrowRight />
               </Link>
             ) : (
               <>
                 <Link className="btn ghost" to="/login">
-                  Sign in
+                  {t("common.signIn")}
                 </Link>
                 {openDirect ? (
                   <Link className="btn primary" to="/app">
-                    Open the app
+                    {t("common.openApp")}
                   </Link>
                 ) : (
                   <Link className="btn primary hide-xs" to="/register">
-                    Start free
+                    {t("landing.startFree")}
                   </Link>
                 )}
               </>
@@ -174,44 +174,48 @@ export default function Landing() {
         <div className="lp-wrap hero-grid">
           <div>
             <div className="eyebrow">
-              <span className="pulse-dot" /> {status.data?.detections_24h ? `${fmtNum(status.data.detections_24h)} fire detections in the last 24 h` : "Live satellite fire monitoring"}
+              <span className="pulse-dot" /> {status.data?.detections_24h ? t("landing.eyebrowCount", { count: status.data.detections_24h }) : t("landing.eyebrow")}
             </div>
             <h1>
-              Satellite wildfire intelligence <span className="grad">for forests</span> and the people who protect them.
+              {t("landing.h1a")} <span className="grad">{t("landing.h1b")}</span> {t("landing.h1c")}
             </h1>
-            <p className="lp-lead">
-              Firealerts watches your land from orbit around the clock, forecasts where each fire will spread, and alerts your team — with an ETA — before it reaches what matters.
-            </p>
+            <p className="lp-lead">{t("landing.lead")}</p>
             <div className="row wrap" style={{ gap: 10 }}>
               {signedIn || openDirect ? (
                 <Link className="btn primary lg" to="/app">
-                  Open the app <IconArrowRight />
+                  {t("common.openApp")} <IconArrowRight />
                 </Link>
               ) : null}
               {!signedIn && (
                 <Link className={`btn lg ${openDirect ? "" : "primary"}`} to="/register">
-                  Start monitoring free
+                  {t("landing.startMonitoring")}
                 </Link>
               )}
-              <a className="btn lg ghost" href="#features">
-                See how it works
-              </a>
+              {publicMap ? (
+                <Link className="btn lg" to="/live">
+                  <IconMap /> {t("landing.openFreeMap")}
+                </Link>
+              ) : (
+                <a className="btn lg ghost" href="#features">
+                  {t("landing.seeHow")}
+                </a>
+              )}
             </div>
             <dl className="hero-stats">
               <div>
-                <dt>Detections · 24 h</dt>
+                <dt>{t("landing.stat.detections")}</dt>
                 <dd>{status.data ? fmtCompact(status.data.detections_24h) : "—"}</dd>
               </div>
               <div>
-                <dt>Geostationary</dt>
+                <dt>{t("sensor.geo")}</dt>
                 <dd>{geo != null ? fmtCompact(geo) : "—"}</dd>
               </div>
               <div>
-                <dt>Active sensors</dt>
+                <dt>{t("landing.stat.sensors")}</dt>
                 <dd>{sensors ?? "—"}</dd>
               </div>
               <div>
-                <dt>Latest pixel</dt>
+                <dt>{t("landing.stat.latest")}</dt>
                 <dd>{status.data?.latest_detection ? timeAgo(status.data.latest_detection) : "—"}</dd>
               </div>
             </dl>
@@ -223,10 +227,10 @@ export default function Landing() {
       <section className="lp-strip">
         <div className="lp-wrap strip-grid">
           {[
-            [IconClock, "10-minute revisit", "from geostationary satellites"],
-            [IconTarget, "375 m", "VIIRS fire pixels"],
-            [IconShield, "72 h", "probabilistic spread horizon"],
-            [IconBell, "Minutes", "from detection to your phone"],
+            [IconClock, t("landing.strip.a1"), t("landing.strip.b1")],
+            [IconTarget, "375 m", t("landing.strip.b2")],
+            [IconShield, "72 h", t("landing.strip.b3")],
+            [IconBell, t("landing.strip.a4"), t("landing.strip.b4")],
           ].map(([I, a, b]) => {
             const Icon = I as typeof IconClock;
             return (
@@ -245,22 +249,22 @@ export default function Landing() {
       <section id="features" className="lp-section">
         <div className="lp-wrap">
           <div className="section-head">
-            <div className="kicker">Product</div>
-            <h2>From first hotspot to burn-severity report</h2>
-            <p>One platform for the whole fire season: detect, forecast, alert and assess — for every forest, plantation and protected area you manage.</p>
+            <div className="kicker">{t("landing.nav.product")}</div>
+            <h2>{t("landing.features.title")}</h2>
+            <p>{t("landing.features.lead")}</p>
           </div>
           <div className="feature-grid">
             {FEATURES.map((f) => (
-              <article key={f.title} className="feature">
+              <article key={f.id} className="feature">
                 <div className="feature-icon">
                   <f.icon size={20} />
                 </div>
-                <h3>{f.title}</h3>
-                <p>{f.body}</p>
+                <h3>{t(`landing.${f.id}.title`)}</h3>
+                <p>{t(`landing.${f.id}.body`)}</p>
                 <ul>
-                  {f.points.map((p) => (
+                  {(["p1", "p2", "p3"] as const).map((p) => (
                     <li key={p}>
-                      <IconCheck size={14} /> {p}
+                      <IconCheck size={14} /> {t(`landing.${f.id}.${p}`)}
                     </li>
                   ))}
                 </ul>
@@ -269,9 +273,9 @@ export default function Landing() {
           </div>
           <div className="how">
             {[
-              ["1", "Draw or upload your forests", "Polygons, KML/KMZ, GeoJSON or zipped Shapefiles. Set a buffer, threat radius and alert thresholds."],
-              ["2", "We watch them from orbit", "Every new detection is checked against your assets; nearby fires get a spread forecast and an ETA."],
-              ["3", "Your team gets the call", "Severity-routed alerts by e-mail, SMS, WhatsApp, Slack, Teams, PagerDuty or webhook — with a link to the live map."],
+              ["1", t("landing.how1.title"), t("landing.how1.body")],
+              ["2", t("landing.how2.title"), t("landing.how2.body")],
+              ["3", t("landing.how3.title"), t("landing.how3.body")],
             ].map(([n, t, b]) => (
               <div key={n} className="how-step">
                 <span className="how-n">{n}</span>
@@ -286,9 +290,9 @@ export default function Landing() {
       <section id="sources" className="lp-section alt">
         <div className="lp-wrap">
           <div className="section-head">
-            <div className="kicker">Open data, fused</div>
-            <h2>Built on the best public Earth-observation data</h2>
-            <p>Every number in Firealerts is traceable to a public source. Live status below comes straight from our ingest pipeline.</p>
+            <div className="kicker">{t("landing.sources.kicker")}</div>
+            <h2>{t("landing.sources.title")}</h2>
+            <p>{t("landing.sources.lead")}</p>
           </div>
           <div className="source-grid">
             {(sources.data?.sources ?? []).map((s) => (
@@ -301,7 +305,7 @@ export default function Landing() {
                 <div className="small muted">
                   {s.coverage} · {s.cadence}
                 </div>
-                {s.last_count ? <div className="tiny muted mt-4">{fmtNum(s.last_count)} detections in the last sync</div> : null}
+                {s.last_count ? <div className="tiny muted mt-4">{t("landing.sources.lastSync", { count: s.last_count })}</div> : null}
               </a>
             ))}
             {sources.loading && Array.from({ length: 6 }, (_, i) => <div key={i} className="source-card skeleton" style={{ height: 120 }} />)}
@@ -312,21 +316,21 @@ export default function Landing() {
       <section id="integrations" className="lp-section">
         <div className="lp-wrap integ">
           <div>
-            <div className="kicker">Integrations</div>
-            <h2>Alerts where your crews already are</h2>
-            <p className="muted mt-8">Route alerts by asset, type and severity. Sign webhooks with HMAC, open incidents in PagerDuty, or pull everything over the REST API with an API key.</p>
+            <div className="kicker">{t("landing.nav.integrations")}</div>
+            <h2>{t("landing.integ.title")}</h2>
+            <p className="muted mt-8">{t("landing.integ.lead")}</p>
             <Link to={signedIn || openDirect ? "/app/integrations" : "/register"} className="btn mt-16">
-              <IconPlug /> Connect your channels
+              <IconPlug /> {t("landing.integ.connect")}
             </Link>
           </div>
           <div className="integ-grid">
             {integrations.map((c) => (
-              <div key={c.label} className="integ-item">
-                <span className="integ-logo">{c.label.replace(/[^A-Za-z]/g, "").slice(0, 2).toUpperCase()}</span>
+              <div key={c.key} className="integ-item">
+                <span className="integ-logo">{c.mark}</span>
                 <span>
                   <b>{c.label}</b>
                   <span className="tiny muted" style={{ display: "block" }}>
-                    {c.category === "data" ? "Data source" : "Notifications"}
+                    {c.data ? t("landing.integ.dataSource") : t("landing.integ.notifications")}
                   </span>
                 </span>
               </div>
@@ -338,40 +342,40 @@ export default function Landing() {
       <section id="pricing" className="lp-section alt">
         <div className="lp-wrap">
           <div className="section-head">
-            <div className="kicker">Pricing</div>
-            <h2>Start free. Scale to a whole landscape.</h2>
+            <div className="kicker">{t("landing.nav.pricing")}</div>
+            <h2>{t("landing.pricing.title")}</h2>
           </div>
           <div className="pricing-grid">
             {plans.map(([key, p]) => {
-              const copy = PLAN_COPY[key] ?? { price: p.label, blurb: "", extras: [] };
+              const copy = planCopy(key) ?? { price: p.label, blurb: "", extras: [] };
               const canBuy = meta?.billing_enabled && signedIn && key !== "free" && me?.role === "owner" && me.org?.plan !== key;
               return (
                 <div key={key} className={`price-card ${copy.highlight ? "hl" : ""}`}>
-                  {copy.highlight && <span className="badge accent" style={{ alignSelf: "flex-start" }}>Most popular</span>}
+                  {copy.highlight && <span className="badge accent" style={{ alignSelf: "flex-start" }}>{t("landing.pricing.popular")}</span>}
                   <h3>{p.label}</h3>
                   {copy.price && <div className="price">{copy.price}</div>}
                   <p className="muted small">{copy.blurb}</p>
                   <ul>
-                    <li><IconCheck size={14} /> {limit(p.assets, "monitored assets")}</li>
-                    <li><IconCheck size={14} /> {p.max_asset_ha == null ? "Any asset size" : `Assets up to ${fmtNum(p.max_asset_ha)} ha`}</li>
-                    <li><IconCheck size={14} /> {limit(p.members, "team members")}</li>
-                    <li><IconCheck size={14} /> {limit(p.connectors, "integrations")}</li>
-                    <li><IconCheck size={14} /> {p.forecast_members ?? 16}-member spread ensembles</li>
+                    <li><IconCheck size={14} /> {limit(p.assets, "landing.pricing.assetsUnlimited", "landing.pricing.assets")}</li>
+                    <li><IconCheck size={14} /> {p.max_asset_ha == null ? t("landing.pricing.anySize") : t("landing.pricing.maxSize", { ha: fmtNum(p.max_asset_ha) })}</li>
+                    <li><IconCheck size={14} /> {limit(p.members, "landing.pricing.membersUnlimited", "landing.pricing.members")}</li>
+                    <li><IconCheck size={14} /> {limit(p.connectors, "landing.pricing.integrationsUnlimited", "landing.pricing.integrations")}</li>
+                    <li><IconCheck size={14} /> {t("landing.pricing.ensemble", { n: p.forecast_members ?? 16 })}</li>
                     {copy.extras.map((x) => (
                       <li key={x}><IconCheck size={14} /> {x}</li>
                     ))}
                   </ul>
                   {canBuy ? (
                     <button className={`btn ${copy.highlight ? "primary" : ""} block`} disabled={busy === key} onClick={() => start(key)}>
-                      Upgrade to {p.label}
+                      {t("plan.upgradeTo", { plan: p.label })}
                     </button>
                   ) : signedIn ? (
                     <Link className={`btn ${copy.highlight ? "primary" : ""} block`} to="/app/settings/organization">
-                      {me?.org?.plan === key ? "Your current plan" : "Manage plan"}
+                      {me?.org?.plan === key ? t("landing.pricing.current") : t("landing.pricing.manage")}
                     </Link>
                   ) : (
                     <Link className={`btn ${copy.highlight ? "primary" : ""} block`} to="/register">
-                      {key === "enterprise" ? "Get started" : key === "free" ? "Start free" : `Start with ${p.label}`}
+                      {key === "enterprise" ? t("landing.pricing.getStarted") : key === "free" ? t("landing.startFree") : t("landing.pricing.startWith", { plan: p.label })}
                     </Link>
                   )}
                 </div>
@@ -384,18 +388,23 @@ export default function Landing() {
       <section className="lp-cta">
         <div className="lp-wrap cta-box">
           <div>
-            <h2>Protect your forests this fire season.</h2>
-            <p className="muted">Set up your first asset in under five minutes. No credit card required.</p>
+            <h2>{t("landing.cta.title")}</h2>
+            <p className="muted">{t("landing.cta.lead")}</p>
           </div>
           <div className="row wrap">
             {!signedIn && (
               <Link className="btn primary lg" to="/register">
-                Create free account
+                {t("landing.cta.create")}
+              </Link>
+            )}
+            {publicMap && (
+              <Link className="btn lg" to="/live">
+                {t("landing.openFreeMap")}
               </Link>
             )}
             {(signedIn || openDirect) && (
               <Link className="btn lg" to="/app">
-                Open the app
+                {t("common.openApp")}
               </Link>
             )}
           </div>
@@ -410,7 +419,7 @@ export default function Landing() {
             </span>
             Firealerts {meta?.version && <span className="faint tiny">v{meta.version}</span>}
           </span>
-          <span className="tiny muted">Forecasts are decision support, not operational fire-behaviour analyses. Data © NASA, NOAA, JAXA, EUMETSAT, ESA/Copernicus, OpenStreetMap.</span>
+          <span className="tiny muted">{t("landing.footer")}</span>
         </div>
       </footer>
     </div>

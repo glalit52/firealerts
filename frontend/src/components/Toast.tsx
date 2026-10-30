@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useMemo, useRef, useState } fro
 import type { ReactNode } from "react";
 import { ApiError } from "../api/client";
 import { IconX } from "./Icons";
+import { t } from "../i18n";
 
 type Kind = "info" | "success" | "error" | "warning";
 interface ToastItem {
@@ -48,7 +49,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         // Plan-limit errors are surfaced by the global upgrade notice instead.
         if (err instanceof ApiError && err.status === 402) return;
         const forbidden = err instanceof ApiError && err.status === 403;
-        show(errorMessage(err), "error", title ?? (forbidden ? "Not allowed" : undefined), 6000);
+        show(errorMessage(err), "error", title ?? (forbidden ? t("common.notAllowed") : undefined), 6000);
       },
     }),
     [show],
@@ -58,13 +59,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <Ctx.Provider value={api}>
       {children}
       <div className="toasts" aria-live="polite" aria-atomic="false">
-        {items.map((t) => (
-          <div key={t.id} className={`toast ${t.kind}`} role={t.kind === "error" ? "alert" : "status"}>
+        {items.map((item) => (
+          <div key={item.id} className={`toast ${item.kind}`} role={item.kind === "error" ? "alert" : "status"}>
             <div className="grow">
-              {t.title && <div className="title">{t.title}</div>}
-              {t.message}
+              {item.title && <div className="title">{item.title}</div>}
+              {item.message}
             </div>
-            <button className="close-btn" style={{ width: 22, height: 22 }} onClick={() => dismiss(t.id)} aria-label="Dismiss notification">
+            <button className="close-btn" style={{ width: 22, height: 22 }} onClick={() => dismiss(item.id)} aria-label={t("common.dismissNotification")}>
               <IconX size={14} />
             </button>
           </div>

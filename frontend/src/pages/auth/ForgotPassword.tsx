@@ -5,8 +5,10 @@ import { auth } from "../../api/endpoints";
 import { errorMessage } from "../../components/Toast";
 import { Button, Input, Notice } from "../../components/ui";
 import { AuthLayout } from "./AuthLayout";
+import { useT } from "../../i18n";
 
 export default function ForgotPassword() {
+  const { t } = useT();
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -24,21 +26,21 @@ export default function ForgotPassword() {
     }
   };
   return (
-    <AuthLayout docTitle="Reset password" title="Reset your password" lead="Enter your e-mail and we'll send you a link to choose a new password." footer={<Link to="/login">Back to sign in</Link>}>
+    <AuthLayout docTitle={t("auth.forgot.doc")} title={t("auth.forgot.title")} lead={t("auth.forgot.lead")} footer={<Link to="/login">{t("auth.backToSignIn")}</Link>}>
       {done ? (
-        <Notice kind="ok" title="Check your inbox">
-          If an account exists for {email}, a reset link is on its way. It's valid for 2 hours.
+        <Notice kind="ok" title={t("auth.forgot.checkInbox")}>
+          {t("auth.forgot.sent", { email })}
           {done.dev_link && (
             <div className="mt-8">
-              Development link: <a href={done.dev_link} style={{ wordBreak: "break-all" }}>{done.dev_link}</a>
+              {t("common.devLink")} <a href={done.dev_link} style={{ wordBreak: "break-all" }}>{done.dev_link}</a>
             </div>
           )}
         </Notice>
       ) : (
         <form onSubmit={submit}>
-          <Input label="E-mail" type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} autoFocus />
+          <Input label={t("common.email")} type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} autoFocus />
           {error && <div className="form-error" role="alert">{error}</div>}
-          <Button type="submit" variant="primary" size="lg" block loading={busy}>Send reset link</Button>
+          <Button type="submit" variant="primary" size="lg" block loading={busy}>{t("auth.forgot.send")}</Button>
         </form>
       )}
     </AuthLayout>

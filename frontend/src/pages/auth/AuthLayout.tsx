@@ -2,9 +2,12 @@ import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { FlameLogo, IconCheck } from "../../components/Icons";
 import { useDocumentTitle } from "../../lib/useAsync";
+import { LanguageSelect } from "../../components/LanguageSwitcher";
+import { useT } from "../../i18n";
 
 export function AuthLayout({ title, lead, children, footer, docTitle }: { title: ReactNode; lead?: ReactNode; children: ReactNode; footer?: ReactNode; docTitle: string }) {
   useDocumentTitle(docTitle);
+  const { t } = useT();
   return (
     <div className="auth-page">
       <aside className="auth-side">
@@ -16,17 +19,20 @@ export function AuthLayout({ title, lead, children, footer, docTitle }: { title:
           Firealerts
         </Link>
         <div style={{ position: "relative" }}>
-          <div className="quote">Know about a fire near your forest minutes after a satellite sees it — and where it will be in six hours.</div>
+          <div className="quote">{t("auth.quote")}</div>
           <ul>
-            <li><IconCheck /> Geostationary detection every 10 minutes, plus VIIRS &amp; MODIS passes</li>
-            <li><IconCheck /> Terrain-aware spread forecasts with threat ETAs for your assets</li>
-            <li><IconCheck /> 7-day fire-danger and machine-learned ignition outlook</li>
-            <li><IconCheck /> Sentinel-2 vegetation health and burn severity per forest</li>
+            <li><IconCheck /> {t("auth.point1")}</li>
+            <li><IconCheck /> {t("auth.point2")}</li>
+            <li><IconCheck /> {t("auth.point3")}</li>
+            <li><IconCheck /> {t("auth.point4")}</li>
           </ul>
         </div>
-        <div className="small muted" style={{ position: "relative" }}>Data: NASA FIRMS · NOAA GOES · JAXA Himawari · EUMETSAT · Copernicus Sentinel-2</div>
+        <div className="small muted" style={{ position: "relative" }}>{t("auth.data")}</div>
       </aside>
       <main className="auth-main">
+        <div className="auth-lang">
+          <LanguageSelect />
+        </div>
         <div className="auth-card">
           <Link to="/" className="brand show-sm" style={{ marginBottom: 28 }}>
             <span className="logo"><FlameLogo size={22} /></span>

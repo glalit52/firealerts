@@ -1,6 +1,7 @@
 /* Small, dependency-free geometry helpers (WGS84 lon/lat). */
 
 import type { Geometry, MultiPolygon, Polygon, Position } from "geojson";
+import { t } from "../i18n";
 
 export type LngLat = [number, number];
 export type BBox = [number, number, number, number];
@@ -106,11 +107,11 @@ export type PolygonCheck = { ok: true; polygon: Polygon; areaHa: number } | { ok
 /** Build and validate a polygon from drawn vertices. */
 export function polygonFromVertices(vertices: LngLat[]): PolygonCheck {
   const v = cleanVertices(vertices);
-  if (v.length < 3) return { ok: false, reason: "Add at least 3 points to make an area." };
-  if (isSelfIntersecting(v)) return { ok: false, reason: "The outline crosses itself. Undo the last points and try again." };
+  if (v.length < 3) return { ok: false, reason: t("draw.min3") };
+  if (isSelfIntersecting(v)) return { ok: false, reason: t("draw.selfIntersect") };
   const polygon: Polygon = { type: "Polygon", coordinates: [closeRing(v)] };
   const ha = areaHa(polygon);
-  if (ha <= 0.01) return { ok: false, reason: "The area is too small." };
+  if (ha <= 0.01) return { ok: false, reason: t("draw.tooSmall") };
   return { ok: true, polygon, areaHa: ha };
 }
 
@@ -172,4 +173,12 @@ export function clampBBox([w, s, e, n]: BBox, maxW = 59.9, maxH = 39.9): BBox {
   const cx = (w + e) / 2, cy = (s + n) / 2;
   const hw = Math.min(maxW / 2, (e - w) / 2), hh = Math.min(maxH / 2, (n - s) / 2);
   return [cx - hw, cy - hh, cx + hw, cy + hh];
+}
+
+/** Grow a bbox by `km` on every side (degrees adjusted for latitude), clipped to the globe. */
+export function padBBox([w, s, e, n]: BBox, km: number): BBox {
+  const dLat = km / 111.32;
+  const lat = Math.min(85, Math.abs((s + n) / 2));
+  const dLon = km / (111.32 * Math.max(0.05, Math.cos(rad(lat))));
+  return [Math.max(-180, w - dLon), Math.max(-85, s - dLat), Math.min(180, e + dLon), Math.min(85, n + dLat)];
 }
