@@ -1,0 +1,31 @@
+# HTTPS front door with automatic Let's Encrypt certificates (Caddy).
+#   DOMAIN=fire.example.com ACME_EMAIL=ops@example.com \
+#   docker compose -f docker-compose.yml -f deploy/docker-compose.tls.yml up -d --build
+# Point the domain's DNS A/AAAA record at this host and open ports 80 and 443 first.
+# Set APP_URL=https://$DOMAIN in .env so links in e-mails and alerts are correct.
+services:
+  web:
+    ports: !reset []
+    expose:
+      - "80"
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN to the public host name}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

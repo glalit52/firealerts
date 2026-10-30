@@ -5,4 +5,6 @@ __pycache__/
 *.db
 *.db-journal
 .pytest_cache/
-/data/
+data/
+node_modules/
+frontend/dist/
