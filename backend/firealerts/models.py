@@ -444,13 +444,13 @@ class StaticSource(Base):
     __table_args__ = (Index("ix_static_sources_cell", "kind", "lat", "lon"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    kind: Mapped[str] = mapped_column(String(16))  # volcano / industrial / persistent
+    kind: Mapped[str] = mapped_column(String(16))  # volcano / industrial (gas flares) / persistent
     name: Mapped[str] = mapped_column(String(160), default="")
     lat: Mapped[float] = mapped_column(Float)
     lon: Mapped[float] = mapped_column(Float)
     radius_km: Mapped[float] = mapped_column(Float, default=2.0)
     days_detected: Mapped[int] = mapped_column(Integer, default=0)
-    source: Mapped[str] = mapped_column(String(32), default="learned")  # curated / learned / manual
+    source: Mapped[str] = mapped_column(String(32), default="learned")  # curated / catalog / learned / manual
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, onupdate=utcnow)
 

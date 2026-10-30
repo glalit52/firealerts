@@ -1,7 +1,10 @@
 """False-positive filtering: volcanoes, gas flares and industrial heat sources.
 
-Two kinds of entries:
+Three kinds of entries:
 * curated volcanoes with persistent thermal activity (lava lakes, open vents);
+* bundled catalogues (``data/``, see its README): the Smithsonian GVP Holocene
+  volcano list and the VIIRS Nightfire / World Bank GGFR gas-flare survey, so
+  known flares are filtered from the first ingest instead of after a week;
 * sources learned from the detection archive: a ~1 km cell with detections on
   at least ``MIN_DAYS`` distinct days in the last ``WINDOW_DAYS`` is a fixed heat
   source (flare stack, steel plant, kiln, landfill...), not a wildfire. Real
@@ -13,17 +16,32 @@ from detection and threat alerts.
 
 from __future__ import annotations
 
+import csv
 import math
 import time
 from collections import defaultdict
 from datetime import timedelta
+from pathlib import Path
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from ..db import utcnow
 from ..geo import haversine_km
 from ..models import Detection, StaticSource
+
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+# GVP positions are summits; vents and lava lakes in large calderas sit km away (Ambrym: 3.4 km).
+VOLCANO_RADIUS_KM = 5.0
+FLARE_RADIUS_KM = 2.0
+FLARE_KINDS = {
+    "upstream": "Upstream oil/gas flare",
+    "refinery": "Refinery flare",
+    "gas": "Gas facility flare",
+    "gpp": "Gas processing plant flare",
+    "opp": "Oil processing plant flare",
+    "lng": "LNG terminal flare",
+}
 
 WINDOW_DAYS = 30
 MIN_DAYS = 8
@@ -49,12 +67,35 @@ def _key(lat: float, lon: float) -> tuple[int, int]:
     return int(math.floor(lat * 10)), int(math.floor(lon * 10))
 
 
+def _rows(name: str) -> list[dict]:
+    with open(DATA_DIR / name, newline="", encoding="utf-8") as f:
+        return list(csv.DictReader(f))
+
+
+def catalog() -> list[StaticSource]:
+    """Bundled GVP volcanoes (minus those already curated) and VIIRS Nightfire gas flares."""
+    out = []
+    for r in _rows("volcanoes.csv"):
+        lat, lon = float(r["lat"]), float(r["lon"])
+        if any(haversine_km(lat, lon, la, lo) <= 6.0 for _, la, lo in VOLCANOES):
+            continue
+        out.append(StaticSource(kind="volcano", name=r["name"], lat=lat, lon=lon, radius_km=VOLCANO_RADIUS_KM, source="catalog"))
+    for r in _rows("gas_flares.csv"):
+        name = f"{FLARE_KINDS.get(r['kind'], 'Gas flare')}, {r['country']}"
+        out.append(StaticSource(kind="industrial", name=name, lat=float(r["lat"]), lon=float(r["lon"]), radius_km=FLARE_RADIUS_KM, source="catalog"))
+    return out
+
+
 def ensure_curated(session: Session) -> None:
-    if session.scalar(select(func.count()).select_from(StaticSource).where(StaticSource.source == "curated")):
-        return
-    for name, lat, lon in VOLCANOES:
-        session.add(StaticSource(kind="volcano", name=name, lat=lat, lon=lon, radius_km=6.0, source="curated"))
-    session.commit()
+    """Seed curated volcanoes and the bundled catalogues once (also on databases seeded before the catalogues)."""
+    have = set(session.scalars(select(StaticSource.source).where(StaticSource.source.in_(("curated", "catalog"))).distinct()))
+    if "curated" not in have:
+        for name, lat, lon in VOLCANOES:
+            session.add(StaticSource(kind="volcano", name=name, lat=lat, lon=lon, radius_km=6.0, source="curated"))
+    if "catalog" not in have:
+        session.add_all(catalog())
+    if len(have) < 2:
+        session.commit()
 
 
 def learn(session: Session, window_days: int = WINDOW_DAYS, min_days: int = MIN_DAYS) -> int:
