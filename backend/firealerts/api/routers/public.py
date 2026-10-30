@@ -16,7 +16,7 @@ from ...db import get_session, utcnow
 from ...geo import bbox_contains
 from ...models import Detection, IngestRun
 from ...services import incidents as incident_svc
-from ..deps import client, parse_bbox
+from ..deps import client, client_ip, parse_bbox
 from . import firedata
 
 _hits: dict[str, deque] = defaultdict(deque)
@@ -26,9 +26,11 @@ LIMIT_PER_MIN = 120
 def guard(request: Request) -> None:
     if not settings.public_map:
         raise HTTPException(404, "the public map is disabled on this server")
-    ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (request.client.host if request.client else "?")
-    q = _hits[ip]
     now = time.time()
+    if len(_hits) > 10000:  # forget idle callers so the table stays bounded
+        for k in [k for k, v in _hits.items() if not v or now - v[-1] > 60]:
+            del _hits[k]
+    q = _hits[client_ip(request)]
     while q and now - q[0] > 60:
         q.popleft()
     if len(q) >= LIMIT_PER_MIN:

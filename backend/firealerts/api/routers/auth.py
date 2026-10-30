@@ -17,6 +17,7 @@ from ...db import get_session, utcnow
 from ...models import AuthToken, EmailToken, Invite, Membership, Organization, User
 from ...security import hash_password, new_token, sha256, verify_password
 from ...services import audit, email, i18n
+from ..deps import client_ip
 
 router = APIRouter(prefix="/api", tags=["auth"])
 DEV_LINKS = os.getenv("DEV_EXPOSE_EMAIL_LINKS", "").lower() in ("1", "true", "yes")
@@ -168,7 +169,7 @@ async def register(body: RegisterIn, request: Request, session: Session = Depend
 
 @router.post("/auth/login")
 def login(body: LoginIn, request: Request, session: Session = Depends(get_session)):
-    key = f"{body.email.strip().lower()}|{request.client.host if request.client else ''}"
+    key = f"{body.email.strip().lower()}|{client_ip(request)}"
     _throttle(key)
     user = session.scalar(select(User).where(func.lower(User.email) == body.email.strip().lower()))
     if not user or not verify_password(body.password, user.password_hash):
