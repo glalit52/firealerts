@@ -30,6 +30,9 @@ class Message:
     org_name: str = ""
     data: dict = field(default_factory=dict)
     recipients: list[str] = field(default_factory=list)  # resolved member e-mails for the email channel
+    push_subscriptions: list[dict] = field(default_factory=list)  # members' devices for the push channel
+    language: str = "en"
+    gone_endpoints: list[str] = field(default_factory=list)  # filled by the push channel (expired devices)
 
     def short(self, limit: int = 300) -> str:
         loc = f" {self.lat:.4f},{self.lon:.4f}" if self.lat is not None else ""
@@ -147,6 +150,44 @@ async def webhook(client: httpx.AsyncClient, cfg: dict, msg: Message) -> None:
     r.raise_for_status()
 
 
+async def push(client: httpx.AsyncClient, cfg: dict, msg: Message) -> None:
+    from . import webpush
+
+    if not msg.push_subscriptions:
+        raise ValueError("no member has enabled push notifications on a device yet")
+    data = {"title": msg.title, "body": msg.text[:300], "url": msg.url, "severity": msg.severity, "tag": f"alert-{msg.alert_id}" if msg.alert_id else "firealerts"}
+    ok = 0
+    for sub in msg.push_subscriptions:
+        try:
+            status = await webpush.send(client, sub["endpoint"], sub["p256dh"], sub["auth"], data, urgency="high" if msg.severity in ("high", "critical") else "normal")
+        except Exception:
+            continue
+        if status in (404, 410):
+            msg.gone_endpoints.append(sub["endpoint"])
+        elif 200 <= status < 300:
+            ok += 1
+    if not ok:
+        raise RuntimeError("no device accepted the notification")
+
+
+async def twilio_voice(client: httpx.AsyncClient, cfg: dict, msg: Message) -> None:
+    from xml.sax.saxutils import escape
+
+    voice_lang = {"es": "es-MX", "pt": "pt-BR"}.get(msg.language, "en-US")
+    say = escape(f"{msg.title}. {msg.text[:400]}")
+    twiml = f'<Response><Say language="{voice_lang}">{say}</Say><Pause length="1"/><Say language="{voice_lang}">{say}</Say></Response>'
+    for to in cfg.get("to", []):
+        to = to.strip()
+        if not to:
+            continue
+        r = await client.post(
+            f"https://api.twilio.com/2010-04-01/Accounts/{cfg['account_sid']}/Calls.json",
+            data={"From": cfg["from_number"], "To": to, "Twiml": twiml},
+            auth=(cfg["account_sid"], cfg["auth_token"]),
+        )
+        r.raise_for_status()
+
+
 CHANNELS = {
     "email": email_channel,
     "slack": slack,
@@ -155,6 +196,8 @@ CHANNELS = {
     "telegram": telegram,
     "twilio_sms": twilio_sms,
     "twilio_whatsapp": twilio_whatsapp,
+    "twilio_voice": twilio_voice,
+    "push": push,
     "pagerduty": pagerduty,
     "webhook": webhook,
 }

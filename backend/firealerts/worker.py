@@ -19,7 +19,7 @@ from . import __version__, auth, ingest
 from .config import settings
 from .db import SessionLocal, init_db, utcnow
 from .models import Alert, Asset, AuthToken, EmailToken, Membership, Organization, User
-from .services import alerting, email, intel
+from .services import alerting, email, i18n, intel, static_sources
 
 log = logging.getLogger("firealerts.worker")
 
@@ -87,9 +87,15 @@ async def job_digest(client):
                 continue
             to = [r[0] for r in s.execute(select(User.email).join(Membership, Membership.user_id == User.id).where(Membership.org_id == org.id, Membership.role.in_(["admin", "owner"]))).all()]
             lines = [f"- [{a.severity}] {a.title} ({a.status})" for a in alerts[:30]]
-            await email.send(to, f"Firealerts daily summary: {len(alerts)} alert(s) for {org.name}", "\n".join(lines), ("Open alerts", f"{settings.app_url}/app/alerts"), client)
+            lang = (org.settings or {}).get("language")
+            await email.send(to, i18n.t(lang, "email.digest.subject", n=len(alerts), org=org.name), "\n".join(lines), (i18n.t(lang, "email.digest.action"), f"{settings.app_url}/app/alerts"), client)
             sent += 1
     return f"digests={sent}"
+
+
+async def job_static_sources(client):
+    with SessionLocal() as s:
+        return f"persistent sources={static_sources.learn(s)}"
 
 
 async def job_cleanup(client):
@@ -108,6 +114,7 @@ def jobs() -> list[Job]:
         Job("risk", settings.risk_job_hours * 3600, job_risk),
         Job("vegetation", settings.vegetation_job_hours * 3600, job_vegetation),
         Job("digest", 24 * 3600, job_digest),
+        Job("static_sources", 24 * 3600, job_static_sources),
         Job("cleanup", 6 * 3600, job_cleanup),
     ]
 

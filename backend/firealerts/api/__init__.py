@@ -16,7 +16,7 @@ from .. import __version__, auth, worker
 from ..config import settings
 from ..db import SessionLocal, init_db
 from ..security import insecure_secret_key
-from .routers import admin, alerts, assets, auth as auth_routes, billing, connectors, data, firedata, orgs, system
+from .routers import admin, alerts, assets, auth as auth_routes, billing, connectors, data, firedata, orgs, public, push, system
 
 log = logging.getLogger("firealerts")
 
@@ -27,6 +27,7 @@ TAGS = [
     {"name": "assets", "description": "Monitored forests and other assets: geometry, import, risk, vegetation, history, exposure"},
     {"name": "alerts", "description": "Alert inbox and lifecycle"},
     {"name": "integrations", "description": "Connectors (notification channels and data sources) and notification rules"},
+    {"name": "public", "description": "Read-only public fire map (no account)"},
     {"name": "fire data", "description": "Detections, incidents, spread forecasts, fire danger and ignition risk"},
     {"name": "data", "description": "Exports"},
     {"name": "admin", "description": "Platform administration (superusers)"},
@@ -67,6 +68,6 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    for r in (system, auth_routes, orgs, billing, assets, alerts, connectors, firedata, data, admin):
+    for r in (system, public, auth_routes, push, orgs, billing, assets, alerts, connectors, firedata, data, admin):
         app.include_router(r.router)
     return app

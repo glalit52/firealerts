@@ -251,3 +251,38 @@ async def danger_grid(client: httpx.AsyncClient, bbox: tuple[float, float, float
         for (la, lo), ser in zip(g["centres"], g["series"])
     ]
     return {"type": "FeatureCollection", "features": cells, "dates": g["dates"], "source": g["source"]}
+
+
+async def wind_grid(client: httpx.AsyncClient | None, bbox: tuple[float, float, float, float], n: int = 12, mode: str = "auto", step_h: int = 3, horizon_h: int = 48) -> dict:
+    """10 m wind on an n×n grid, every `step_h` hours for `horizon_h` hours from now."""
+    w, s, e, nn = bbox
+    key = ("wind", round(w, 1), round(s, 1), round(e, 1), round(nn, 1), n, mode)
+    cached = _cache_get(key)
+    if cached:
+        return cached
+    dx, dy = (e - w) / n, (nn - s) / n
+    centres = [(s + (j + 0.5) * dy, w + (i + 0.5) * dx) for j in range(n) for i in range(n)]
+    source, wxs = "open-meteo", None
+    if mode != "demo" and client is not None:
+        try:
+            wxs = await fetch_open_meteo(client, centres, past_days=1, forecast_days=3)
+        except Exception as exc:
+            if mode == "live":
+                raise
+            log.warning("Open-Meteo wind unavailable (%s); using synthetic wind", exc)
+    if wxs is None:
+        wxs, source = [synthetic_hours(la, lo, past_days=1, forecast_days=3) for la, lo in centres], "demo"
+    now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    times = [now + timedelta(hours=h) for h in range(0, horizon_h + 1, step_h)]
+    feats = []
+    for (la, lo), wx in zip(centres, wxs):
+        by_t = {h["time"]: h for h in wx["hours"]}
+        speed, direction = [], []
+        for t in times:
+            h = by_t.get(t)
+            speed.append(round(h["wind"], 1) if h else None)
+            direction.append(round(h["wind_dir"]) if h else None)
+        feats.append({"type": "Feature", "geometry": {"type": "Point", "coordinates": [round(lo, 4), round(la, 4)]}, "properties": {"speed": speed, "dir": direction}})
+    out = {"source": source, "hours": [t.isoformat() for t in times], "features": feats}
+    _cache_put(key, out)
+    return out

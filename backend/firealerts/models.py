@@ -104,6 +104,7 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(120), default="")
     password_hash: Mapped[str] = mapped_column(String(255))
     is_superuser: Mapped[bool] = mapped_column(Boolean, default=False)
+    language: Mapped[str | None] = mapped_column(String(8), nullable=True)
     email_verified_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     last_login_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
@@ -114,6 +115,7 @@ class User(Base):
             "email": self.email,
             "name": self.name,
             "is_superuser": self.is_superuser,
+            "language": self.language,
             "email_verified": self.email_verified_at is not None,
             "created_at": _iso(self.created_at),
         }
@@ -412,3 +414,45 @@ class AssetAnalysis(Base):
 
     def as_dict(self) -> dict:
         return {"kind": self.kind, "source": self.source, "params": self.params_key, "result": self.result, "created_at": _iso(self.created_at)}
+
+
+class PushSubscription(Base):
+    """A browser/device Web Push subscription of a user (PWA notifications)."""
+
+    __tablename__ = "push_subscriptions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    endpoint: Mapped[str] = mapped_column(Text)
+    endpoint_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    p256dh: Mapped[str] = mapped_column(String(200))
+    auth: Mapped[str] = mapped_column(String(64))
+    user_agent: Mapped[str] = mapped_column(String(300), default="")
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+    last_used_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+
+    def as_dict(self) -> dict:
+        from urllib.parse import urlparse
+
+        return {"id": self.id, "endpoint_host": urlparse(self.endpoint).hostname, "user_agent": self.user_agent, "created_at": _iso(self.created_at), "last_used_at": _iso(self.last_used_at)}
+
+
+class StaticSource(Base):
+    """Known or learned persistent heat sources (volcanoes, gas flares, industry) used to filter false positives."""
+
+    __tablename__ = "static_sources"
+    __table_args__ = (Index("ix_static_sources_cell", "kind", "lat", "lon"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    kind: Mapped[str] = mapped_column(String(16))  # volcano / industrial / persistent
+    name: Mapped[str] = mapped_column(String(160), default="")
+    lat: Mapped[float] = mapped_column(Float)
+    lon: Mapped[float] = mapped_column(Float)
+    radius_km: Mapped[float] = mapped_column(Float, default=2.0)
+    days_detected: Mapped[int] = mapped_column(Integer, default=0)
+    source: Mapped[str] = mapped_column(String(32), default="learned")  # curated / learned / manual
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, onupdate=utcnow)
+
+    def as_dict(self) -> dict:
+        return {"id": self.id, "kind": self.kind, "name": self.name, "lat": self.lat, "lon": self.lon, "radius_km": self.radius_km, "days_detected": self.days_detected, "source": self.source, "active": self.active}

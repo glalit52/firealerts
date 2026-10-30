@@ -17,20 +17,23 @@ import math
 from datetime import timedelta
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from .. import geo
 from ..config import settings
 from ..db import utcnow
 from ..integrations import notify
-from ..models import SEVERITIES, Alert, Asset, Connector, Detection, Membership, NotificationRule, Organization, User
+from ..models import SEVERITIES, Alert, Asset, Connector, Detection, Membership, NotificationRule, Organization, PushSubscription, User
+from ..security import sha256
 from ..science import fwi as F
 from ..science import spread
 from ..sources import weather
 from . import assets as asset_svc
+from . import i18n
 from . import connectors as conn_svc
 from . import incidents as incident_svc
+from . import static_sources
 
 log = logging.getLogger(__name__)
 DANGER_ORDER = [name for _, name in F.DANGER_CLASSES]
@@ -136,7 +139,21 @@ def message_for(session: Session, alert: Alert) -> notify.Message:
         org_name=org.name if org else "",
         data={k: v for k, v in (alert.data or {}).items() if k != "detection_ids"},
         recipients=_member_emails(session, alert.org_id),
+        push_subscriptions=member_push_subscriptions(session, alert.org_id),
+        language=org_language(org),
     )
+
+
+def member_push_subscriptions(session: Session, org_id: int) -> list[dict]:
+    rows = session.scalars(
+        select(PushSubscription).join(Membership, Membership.user_id == PushSubscription.user_id).where(Membership.org_id == org_id)
+    ).all()
+    return [{"endpoint": r.endpoint, "p256dh": r.p256dh, "auth": r.auth} for r in rows]
+
+
+def org_language(org: Organization | None) -> str:
+    lang = ((org.settings or {}).get("language") if org else None) or "en"
+    return lang if lang in i18n.LANGUAGES else "en"
 
 
 async def dispatch(session: Session, client: httpx.AsyncClient, alert: Alert) -> list[dict]:
@@ -158,6 +175,8 @@ async def dispatch(session: Session, client: httpx.AsyncClient, alert: Alert) ->
         return {"connector_id": c.id, "type": c.type, "name": c.name, "status": status, "at": utcnow().isoformat(), "severity": alert.severity}
 
     results = await asyncio.gather(*[one(c) for c in targets])
+    if msg.gone_endpoints:  # devices that uninstalled the app or revoked permission
+        session.execute(delete(PushSubscription).where(PushSubscription.endpoint_hash.in_([sha256(e) for e in msg.gone_endpoints])))
     alert.deliveries = (alert.deliveries or []) + list(results)
     return list(results)
 
@@ -172,6 +191,7 @@ async def _emit(session: Session, client: httpx.AsyncClient, alert: Alert, notif
 
 async def on_new_detections(session: Session, client: httpx.AsyncClient, new: list[Detection]) -> int:
     fresh = [d for d in new if d.acq_time >= utcnow() - timedelta(hours=6)]  # never alert on stale backfill
+    fresh = [d for d in fresh if not static_sources.classify(session, d.lat, d.lon)]  # volcanoes, flares, industry
     if not fresh:
         return 0
     created = 0
@@ -183,22 +203,28 @@ async def on_new_detections(session: Session, client: httpx.AsyncClient, new: li
         frps = [d.frp for d, _ in hits if d.frp is not None]
         max_frp = max(frps) if frps else None
         nearest_det, nearest_km = min(hits, key=lambda h: h[1])
+        lang = org_language(session.get(Organization, asset.org_id))
         if inside:
             severity = "critical" if (len(inside) >= 5 or (max_frp or 0) >= 100) else "high"
-            where = f"inside {asset.name}"
+            where = i18n.t(lang, "det.where_inside", asset=asset.name)
         else:
             severity = "moderate"
-            where = f"{nearest_km:.1f} km from {asset.name}"
+            where = i18n.t(lang, "det.where_near", km=f"{nearest_km:.1f}", asset=asset.name)
         prev = session.scalar(
             select(Alert).where(Alert.org_id == asset.org_id, Alert.dedupe_key == f"det:{asset.id}", Alert.status != "resolved", Alert.created_at >= utcnow() - timedelta(hours=12))
         )
         ids = sorted(set((prev.data or {}).get("detection_ids", []) if prev else []) | {d.id for d, _ in hits})
         sources = sorted({d.source for d, _ in hits} | set((prev.data or {}).get("sources", []) if prev else []))
-        title = f"{len(ids)} fire detection{'s' if len(ids) != 1 else ''} {where}"
-        text = (
-            f"Satellites detected active fire {where}.\n\n"
-            f"Nearest pixel: {nearest_det.lat:.4f}, {nearest_det.lon:.4f} ({nearest_det.source}, {nearest_det.acq_time:%Y-%m-%d %H:%M} UTC)"
-            + (f", radiative power up to {max_frp:.0f} MW." if max_frp else ".")
+        title = i18n.plural(lang, "det.title", len(ids), where=where)
+        text = i18n.t(
+            lang,
+            "det.text",
+            where=where,
+            lat=f"{nearest_det.lat:.4f}",
+            lon=f"{nearest_det.lon:.4f}",
+            source=nearest_det.source,
+            time=f"{nearest_det.acq_time:%Y-%m-%d %H:%M}",
+            frp=i18n.t(lang, "det.frp", frp=f"{max_frp:.0f}") if max_frp else ".",
         )
         alert, should = upsert(
             session,
@@ -239,7 +265,7 @@ def _eta(result: dict, asset: Asset) -> tuple[int | None, int | None]:
 
 async def check_threats(session: Session, client: httpx.AsyncClient, max_forecasts: int = 40) -> int:
     incs, summaries = incident_svc.incidents(session, 24)
-    active = [s for s in summaries.values() if s["status"] == "active"]
+    active = [s for s in summaries.values() if s["status"] == "active" and not s.get("static_source")]
     if not active:
         return 0
     pairs = []
@@ -266,17 +292,16 @@ async def check_threats(session: Session, client: httpx.AsyncClient, max_forecas
         likely, possible = _eta(forecasts[s["id"]], asset)
         if likely is None and possible is None:
             continue
-        if likely is not None:
-            severity = "critical" if likely <= 6 else "high"
-            title = f"Fire may reach {asset.name} within ~{likely} h"
-        else:
-            severity = "moderate"
-            title = f"Fire could reach {asset.name} within {possible} h (worst case)"
+        lang = org_language(session.get(Organization, asset.org_id))
+        kind = "likely" if likely is not None else "possible"
+        hours = likely if likely is not None else possible
+        severity = ("critical" if likely <= 6 else "high") if likely is not None else "moderate"
         bearing = asset_svc.bearing_deg(asset.centroid_lat, asset.centroid_lon, s["lat"], s["lon"])
+        title = i18n.t(lang, f"threat.title.{kind}", asset=asset.name, h=hours)
         text = (
-            f"An active fire {km:.1f} km away (bearing {bearing:.0f}°, {s['count']} pixels, {s['frp_sum']:.0f} MW) is forecast to "
-            + (f"reach the asset in about {likely} hours (median of the ensemble)." if likely is not None else f"possibly reach the asset within {possible} hours (P90 envelope).")
-            + "\n\nForecast: Canadian FBP rate of spread with ensemble weather; terrain and suppression not included."
+            i18n.t(lang, f"threat.text.{kind}", km=f"{km:.1f}", bearing=f"{bearing:.0f}", pixels=s["count"], frp=f"{s['frp_sum']:.0f}", h=hours)
+            + "\n\n"
+            + i18n.t(lang, "threat.note")
         )
         alert, should = upsert(
             session,
@@ -314,13 +339,20 @@ async def raise_risk_alert(session: Session, client: httpx.AsyncClient, asset: A
         return False
     worst = max(hits, key=lambda d: d["fwi"])
     severity = RISK_SEVERITY.get(worst["danger"], "low")
-    label = worst["danger"].replace("_", " ")
+    lang = org_language(session.get(Organization, asset.org_id))
+    label = i18n.danger(lang, worst["danger"])
     p = worst.get("ignition_p")
-    title = f"{label.capitalize()} fire danger forecast for {asset.name} on {worst['date']}"
-    text = (
-        f"Fire Weather Index {worst['fwi']:.0f} ({label}) is forecast for {worst['date']}"
-        + (f", with an estimated {p * 100:.0f}% chance of a satellite-detected fire in the area." if p is not None else ".")
-        + f"\n\nWeather that day: {worst['temp']:.0f}°C, {worst['rh']:.0f}% humidity, wind {worst['wind']:.0f} km/h. Consider readiness measures and restricting burning."
+    title = i18n.t(lang, "risk.title", danger=label[:1].upper() + label[1:], asset=asset.name, date=worst["date"])
+    text = i18n.t(
+        lang,
+        "risk.text",
+        fwi=f"{worst['fwi']:.0f}",
+        danger=label,
+        date=worst["date"],
+        p=i18n.t(lang, "risk.p", p=f"{p * 100:.0f}") if p is not None else "",
+        temp=f"{worst['temp']:.0f}",
+        rh=f"{worst['rh']:.0f}",
+        wind=f"{worst['wind']:.0f}",
     )
     alert, should = upsert(
         session,

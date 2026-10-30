@@ -14,7 +14,7 @@ from ...models import ALERT_TYPES, ASSET_KINDS, SEVERITIES, Detection, IngestRun
 from ...plans import PLANS
 from ...science import fwi as F
 from ...science import spread
-from ...services import billing, email
+from ...services import billing, email, i18n
 from ...services import incidents as incident_svc
 
 router = APIRouter(prefix="/api", tags=["system"])
@@ -36,6 +36,9 @@ def meta():
         "require_email_verification": settings.require_email_verification,
         "email_configured": email.configured(),
         "billing_enabled": billing.enabled(),
+        "public_map": settings.public_map,
+        "push_enabled": True,
+        "languages": list(i18n.LANGUAGES),
         "data_mode": settings.data_mode,
         "plans": PLANS,
         "roles": auth.ROLES,

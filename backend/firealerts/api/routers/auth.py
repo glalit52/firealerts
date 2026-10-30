@@ -16,7 +16,7 @@ from ...config import settings
 from ...db import get_session, utcnow
 from ...models import AuthToken, EmailToken, Invite, Membership, Organization, User
 from ...security import hash_password, new_token, sha256, verify_password
-from ...services import audit, email
+from ...services import audit, email, i18n
 
 router = APIRouter(prefix="/api", tags=["auth"])
 DEV_LINKS = os.getenv("DEV_EXPOSE_EMAIL_LINKS", "").lower() in ("1", "true", "yes")
@@ -46,6 +46,7 @@ class RegisterIn(BaseModel):
     name: str = Field(default="", max_length=120)
     org_name: str = Field(default="", max_length=120)
     invite_token: str = ""
+    language: str | None = None
 
     @field_validator("email")
     @classmethod
@@ -73,6 +74,14 @@ class ResetIn(BaseModel):
 
 class ProfileIn(BaseModel):
     name: str | None = Field(default=None, max_length=120)
+    language: str | None = None
+
+    @field_validator("language")
+    @classmethod
+    def _lang(cls, v):
+        if v is not None and v not in i18n.LANGUAGES:
+            raise ValueError(f"language must be one of {', '.join(i18n.LANGUAGES)}")
+        return v
 
 
 class PasswordIn(BaseModel):
@@ -91,10 +100,14 @@ async def _send_token_mail(session: Session, user: User, purpose: str, request: 
     session.commit()
     path = "verify-email" if purpose == "verify" else "reset-password"
     link = f"{settings.app_url.rstrip('/')}/{path}?token={raw}"
-    if purpose == "verify":
-        sent = await email.send(user.email, "Confirm your e-mail address", "Welcome to Firealerts! Confirm your address to activate your account.", ("Confirm e-mail", link), request.app.state.client)
-    else:
-        sent = await email.send(user.email, "Reset your password", "Someone (hopefully you) asked to reset your Firealerts password. The link is valid for 2 hours. If it wasn't you, ignore this e-mail.", ("Choose a new password", link), request.app.state.client)
+    lang = user.language
+    sent = await email.send(
+        user.email,
+        i18n.t(lang, f"email.{purpose}.subject"),
+        i18n.t(lang, f"email.{purpose}.body"),
+        (i18n.t(lang, f"email.{purpose}.action"), link),
+        request.app.state.client,
+    )
     return {"emailed": sent, **({"dev_link": link} if DEV_LINKS else {})}
 
 
@@ -135,13 +148,13 @@ async def register(body: RegisterIn, request: Request, session: Session = Depend
         raise HTTPException(403, "registration is by invitation only")
     if session.scalar(select(User).where(func.lower(User.email) == body.email)):
         raise HTTPException(409, "an account with this e-mail already exists")
-    user = User(email=body.email, name=body.name.strip(), password_hash=hash_password(body.password), is_superuser=body.email in settings.superuser_emails)
+    user = User(email=body.email, name=body.name.strip(), password_hash=hash_password(body.password), is_superuser=body.email in settings.superuser_emails, language=i18n.norm(body.language) if body.language else None)
     session.add(user)
     session.flush()
     if body.invite_token:
         _accept_invite(session, user, body.invite_token)
     else:
-        org = Organization(name=body.org_name.strip() or f"{body.name.strip() or body.email.split('@')[0]}'s organisation", plan=settings.default_plan, settings={"daily_digest": True})
+        org = Organization(name=body.org_name.strip() or f"{body.name.strip() or body.email.split('@')[0]}'s organisation", plan=settings.default_plan, settings={"daily_digest": True, "language": i18n.norm(body.language)})
         session.add(org)
         session.flush()
         session.add(Membership(user_id=user.id, org_id=org.id, role="owner"))
@@ -244,6 +257,8 @@ def update_me(body: ProfileIn, p: Principal = Depends(require_user), session: Se
     user = session.get(User, p.user.id)
     if body.name is not None:
         user.name = body.name.strip()
+    if body.language is not None:
+        user.language = body.language
     session.commit()
     return user.as_dict()
 

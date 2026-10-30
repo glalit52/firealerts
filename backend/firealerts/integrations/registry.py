@@ -50,6 +50,18 @@ CONNECTOR_TYPES: dict[str, dict] = {
         "description": "WhatsApp message through Twilio.",
         "fields": [field("account_sid", "Account SID"), field("auth_token", "Auth token", "password", secret=True), field("from_number", "WhatsApp sender", placeholder="+14155238886"), field("to", "To numbers", "list")],
     },
+    "twilio_voice": {
+        "category": "notification",
+        "label": "Phone call (Twilio)",
+        "description": "Automated voice call that reads the alert aloud (twice), in the organisation's language. Best for critical alerts.",
+        "fields": [field("account_sid", "Account SID"), field("auth_token", "Auth token", "password", secret=True), field("from_number", "Caller number", placeholder="+15005550006"), field("to", "Numbers to call", "list")],
+    },
+    "push": {
+        "category": "notification",
+        "label": "Mobile push",
+        "description": "Push notifications to the phones and computers where members installed the web app and enabled notifications.",
+        "fields": [],
+    },
     "pagerduty": {"category": "notification", "label": "PagerDuty", "description": "Trigger incidents (Events API v2).", "fields": [field("routing_key", "Integration / routing key", "password", secret=True)]},
     "webhook": {
         "category": "notification",

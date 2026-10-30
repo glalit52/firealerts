@@ -12,7 +12,7 @@ from ...db import get_session
 from ...integrations import notify, registry
 from ...models import ALERT_TYPES, SEVERITIES, Asset, Connector, NotificationRule, Organization
 from ...security import encrypt_json
-from ...services import audit
+from ...services import alerting, audit, i18n
 from ...services import connectors as conn_svc
 from ..deps import client
 
@@ -114,13 +114,16 @@ def delete_connector(cid: int, p: Principal = Depends(require("admin")), session
 async def test_connector(cid: int, p: Principal = Depends(require("admin")), session: Session = Depends(get_session), http: httpx.AsyncClient = Depends(client)):
     c = _own(session, cid, p)
     org = session.get(Organization, p.org_id)
+    lang = alerting.org_language(org)
     sample = notify.Message(
-        title="Test alert from Firealerts",
-        text=f"This is a test notification for '{c.name}'. If you can read this, {org.name}'s alerts will arrive here.",
+        title=i18n.t(lang, "test.title"),
+        text=i18n.t(lang, "test.text", name=c.name, org=org.name),
         severity="info",
         type="system",
         org_name=org.name,
         recipients=[p.user.email] if p.user else [],
+        push_subscriptions=alerting.member_push_subscriptions(session, org.id),
+        language=lang,
     )
     try:
         msg = await registry.test(http, c.type, conn_svc.config(c), sample)

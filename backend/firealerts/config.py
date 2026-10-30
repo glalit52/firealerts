@@ -41,6 +41,7 @@ class Settings:
     app_url: str = field(default_factory=lambda: os.getenv("APP_URL", os.getenv("PUBLIC_URL", "http://localhost:5173")))
     superuser_emails: list[str] = field(default_factory=lambda: [e.lower() for e in _list("SUPERUSER_EMAILS", "")])
     require_email_verification: bool = field(default_factory=lambda: _bool("REQUIRE_EMAIL_VERIFICATION", False))
+    public_map: bool = field(default_factory=lambda: _bool("PUBLIC_MAP", True))
     default_plan: str = field(default_factory=lambda: os.getenv("DEFAULT_PLAN", "free"))
 
     # NASA FIRMS. Without a MAP_KEY the public global 24h CSV files are used.
@@ -88,6 +89,10 @@ class Settings:
     stripe_webhook_secret: str = field(default_factory=lambda: os.getenv("STRIPE_WEBHOOK_SECRET", ""))
     stripe_price_pro: str = field(default_factory=lambda: os.getenv("STRIPE_PRICE_PRO", ""))
     stripe_price_enterprise: str = field(default_factory=lambda: os.getenv("STRIPE_PRICE_ENTERPRISE", ""))
+
+    # Web Push (PWA). Keys default to a key derived from SECRET_KEY.
+    vapid_private_key: str = field(default_factory=lambda: os.getenv("VAPID_PRIVATE_KEY", ""))
+    vapid_subject: str = field(default_factory=lambda: os.getenv("VAPID_SUBJECT", ""))
 
     # Notifications
     sendgrid_api_key: str = field(default_factory=lambda: os.getenv("SENDGRID_API_KEY", ""))

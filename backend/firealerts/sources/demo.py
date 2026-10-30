@@ -126,6 +126,12 @@ def generate(now: datetime | None = None, lookback_h: int = 24) -> list[dict]:
                 conf = "h" if frp > 25 else ("n" if frp > 4 else "l")
                 out.append(_det(src, sat, t, round(la, 4), round(lo, 4), frp, conf, px, daynight))
 
+    # Villarrica volcano's lava lake: hot on every pass (filtered as a static source).
+    vt = now.replace(minute=0, second=0, microsecond=0)
+    for h in range(0, lookback_h, 3):
+        t = vt - timedelta(hours=h)
+        out.append(_det("VIIRS_NOAA20", "N20", t, -39.4205, -71.9395, 35.0, "h", 375.0, "N"))
+
     # Scattered small agricultural burns.
     hour_idx = int((now - EPOCH).total_seconds() // 3600)
     for k in range(hour_idx - lookback_h, hour_idx + 1):

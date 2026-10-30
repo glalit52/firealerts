@@ -58,7 +58,7 @@ def export_detections(fmt: str, bbox: str | None = None, hours: float = Query(24
     rows = incident_svc.query_detections(session, hours, parse_bbox(bbox), limit=100_000)
     stamp = utcnow().strftime("%Y%m%d%H%M")
     if fmt == "geojson":
-        return _download(json.dumps({"type": "FeatureCollection", "features": [r.as_feature() for r in rows]}), f"detections-{stamp}.geojson", "application/geo+json")
+        return _download(json.dumps({"type": "FeatureCollection", "features": [incident_svc.feature(session, r) for r in rows]}), f"detections-{stamp}.geojson", "application/geo+json")
     if fmt == "kml":
         pms = [f"<Placemark><name>{escape(r.source)} {r.acq_time:%Y-%m-%d %H:%M}</name><description>FRP {r.frp or ''} MW, confidence {r.confidence}</description><Point><coordinates>{r.lon},{r.lat}</coordinates></Point></Placemark>" for r in rows]
         return _download(_kml_doc("Firealerts detections", pms), f"detections-{stamp}.kml", "application/vnd.google-earth.kml+xml")

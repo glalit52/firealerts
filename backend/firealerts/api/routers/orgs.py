@@ -11,7 +11,7 @@ from ...config import settings
 from ...db import get_session
 from ...models import AuditLog, Invite, Membership, Organization, User
 from ...security import new_token, sha256
-from ...services import audit, email
+from ...services import audit, email, i18n
 
 router = APIRouter(prefix="/api", tags=["organisation"])
 
@@ -67,7 +67,9 @@ def update_org(body: OrgPatch, p: Principal = Depends(require("admin")), session
     if body.name is not None:
         org.name = body.name.strip()
     if body.settings is not None:
-        allowed = {"timezone", "daily_digest", "units", "default_buffer_km"}
+        allowed = {"timezone", "daily_digest", "units", "default_buffer_km", "language"}
+        if "language" in body.settings and body.settings["language"] not in i18n.LANGUAGES:
+            raise HTTPException(422, f"language must be one of {', '.join(i18n.LANGUAGES)}")
         org.settings = {**(org.settings or {}), **{k: v for k, v in body.settings.items() if k in allowed}}
     audit.record(session, p, "org.update", org.name)
     session.commit()
@@ -135,8 +137,15 @@ async def invite(body: InviteIn, request: Request, p: Principal = Depends(requir
     url = f"{settings.app_url.rstrip('/')}/invite/{raw}"
     inviter = p.user.name or p.user.email if p.user else "A colleague"
     sent = False
+    lang = (org.settings or {}).get("language")
     try:
-        sent = await email.send(inv.email, f"You're invited to {org.name} on Firealerts", f"{inviter} invited you to join {org.name} as {inv.role}. The link expires in 14 days.", ("Accept invitation", url), request.app.state.client)
+        sent = await email.send(
+            inv.email,
+            i18n.t(lang, "email.invite.subject", org=org.name),
+            i18n.t(lang, "email.invite.body", inviter=inviter, org=org.name, role=inv.role),
+            (i18n.t(lang, "email.invite.action"), url),
+            request.app.state.client,
+        )
     except Exception:
         sent = False
     return {"id": inv.id, "email": inv.email, "role": inv.role, "invite_url": url, "emailed": sent}
