@@ -21,8 +21,9 @@ Organisations configure integrations in **Integrations** (API: `/api/connectors`
 Use **Send test** on each connector. Alert texts are written in the organisation's language (English, Spanish or
 Portuguese; **Settings → Organisation**), account e-mails in each user's own language.
 
-Detections on known static heat sources (active volcanoes, plus cells that burn on most days, learned daily from the
-archive, e.g. flares and industrial furnaces) are labelled on the map and never trigger alerts. Routing is controlled by **notification rules** (assets × alert types × minimum severity → connectors).
+Detections on known static heat sources (1,600+ Holocene volcanoes from the Smithsonian GVP list, 8,000+ gas flares
+from the VIIRS Nightfire survey, plus cells that burn on most days, learned daily from the archive, e.g. new flares and
+industrial furnaces) are labelled on the map and never trigger alerts. Routing is controlled by **notification rules** (assets × alert types × minimum severity → connectors).
 
 ## Data sources
 
