@@ -82,7 +82,7 @@ def catalog() -> list[StaticSource]:
         out.append(StaticSource(kind="volcano", name=r["name"], lat=lat, lon=lon, radius_km=VOLCANO_RADIUS_KM, source="catalog"))
     for r in _rows("gas_flares.csv"):
         name = f"{FLARE_KINDS.get(r['kind'], 'Gas flare')}, {r['country']}"
-        out.append(StaticSource(kind="flare", name=name, lat=float(r["lat"]), lon=float(r["lon"]), radius_km=FLARE_RADIUS_KM, source="catalog"))
+        out.append(StaticSource(kind="industrial", name=name, lat=float(r["lat"]), lon=float(r["lon"]), radius_km=FLARE_RADIUS_KM, source="catalog"))
     return out
 
 

@@ -444,7 +444,7 @@ class StaticSource(Base):
     __table_args__ = (Index("ix_static_sources_cell", "kind", "lat", "lon"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    kind: Mapped[str] = mapped_column(String(16))  # volcano / flare / industrial / persistent
+    kind: Mapped[str] = mapped_column(String(16))  # volcano / industrial (gas flares) / persistent
     name: Mapped[str] = mapped_column(String(160), default="")
     lat: Mapped[float] = mapped_column(Float)
     lon: Mapped[float] = mapped_column(Float)

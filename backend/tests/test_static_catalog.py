@@ -27,7 +27,7 @@ def test_catalog_classifies_known_volcanoes_and_flares():
         _fresh(s)
         assert static_sources.classify(s, *AMBRYM_LAKES)["name"] == "Ambrym"
         flare = static_sources.classify(s, *TABASCO)
-        assert flare["type"] == "flare" and "Mexico" in flare["name"] and flare["distance_km"] < 2
+        assert flare["type"] == "industrial" and "Mexico" in flare["name"] and flare["distance_km"] < 2
         lengai = static_sources.classify(s, *LENGAI)
         assert lengai["type"] == "volcano" and "Lengai" in lengai["name"]
         assert static_sources.classify(s, -31.3, -64.5) is None  # wildland in Córdoba, AR
@@ -50,7 +50,7 @@ def test_catalog_backfills_databases_seeded_before_it():
         s.execute(delete(StaticSource).where(StaticSource.source == "catalog"))
         s.commit()
         static_sources.invalidate()
-        assert static_sources.classify(s, *TABASCO)["type"] == "flare"
+        assert static_sources.classify(s, *TABASCO)["type"] == "industrial"
 
 
 def test_demo_fires_are_not_static_sources():
