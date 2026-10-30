@@ -699,7 +699,14 @@ export interface FireStats {
   by_source: Record<string, number>;
 }
 
-export type PublicStatus = Omit<Status, "runs"> & { runs?: IngestRun[] };
+/** /api/public/status: the public subset of /api/status (no runs or errors). */
+export interface PublicStatus {
+  detections_24h: number;
+  by_source_24h: Record<string, number>;
+  latest_detection: string | null;
+  last_sync?: string | null;
+  active_mode?: string | null;
+}
 
 // ------------------------------------------------------------------ push
 

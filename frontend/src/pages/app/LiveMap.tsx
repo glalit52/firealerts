@@ -19,6 +19,7 @@ import { bboxString, clampBBox, expandBBox } from "../../lib/geo";
 import { HIDE_STATIC_KEY, countStatic, filterDetections, filterIncidents } from "../../lib/staticSources";
 import { syncMessage } from "../../lib/sync";
 import { useDocumentTitle } from "../../lib/useAsync";
+import { MAX_HISTORY_DAYS, dayDiff, historyRangeError, isoDay } from "../../lib/history";
 import { MapView } from "../../map/MapView";
 import { detectionPopup } from "../../map/popups";
 import { WindPanel, useWindLayer, useWindToggle, viewBBox } from "../../map/WindLayer";
@@ -45,19 +46,6 @@ function setupLayers(map: MlMap) {
   addLayer(map, { id: "hulls-hit", type: "fill", source: "hulls", minzoom: 6, paint: { "fill-color": "#ff8a4c", "fill-opacity": 0.02 } });
   addDetectionLayers(map, "dets");
   addLayer(map, { id: "whatif-pt", type: "circle", source: "whatif-pt", paint: { "circle-radius": 6, "circle-color": "#fff", "circle-stroke-color": "#ff3b3b", "circle-stroke-width": 3 } });
-}
-
-const MAX_HISTORY_DAYS = 31;
-const isoDay = (d: Date) => d.toISOString().slice(0, 10);
-const dayDiff = (a: string, b: string) => Math.round((Date.parse(`${b}T12:00:00Z`) - Date.parse(`${a}T12:00:00Z`)) / 864e5);
-
-/** Validate a history date range (YYYY-MM-DD, inclusive). Returns an error message key or null. */
-export function historyRangeError(from: string, to: string, today = isoDay(new Date())): "history.errOrder" | "history.errMax" | "history.errFuture" | "history.errMissing" | null {
-  if (!from || !to) return "history.errMissing";
-  if (from > to) return "history.errOrder";
-  if (to > today) return "history.errFuture";
-  if (dayDiff(from, to) + 1 > MAX_HISTORY_DAYS) return "history.errMax";
-  return null;
 }
 
 export default function LiveMap() {

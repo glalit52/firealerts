@@ -1,7 +1,6 @@
 /* Web Push on this device: permission, subscription and (un)registration with the API. */
 import { push as pushApi } from "../api/endpoints";
 import type { PushSubscriptionBody } from "../api/endpoints";
-import { swRegistration } from "./pwa";
 
 export type PushSupport = "supported" | "unsupported" | "insecure";
 
@@ -24,22 +23,24 @@ export function urlBase64ToUint8Array(base64: string): Uint8Array {
 
 /** The service worker registration, registering /sw.js on demand (dev builds don't register it at start-up). */
 async function registration(): Promise<ServiceWorkerRegistration> {
-  const existing = await swRegistration(1500);
-  if (existing) return existing;
-  await navigator.serviceWorker.register("/sw.js");
-  const ready = await swRegistration(8000);
-  if (!ready) throw new Error("service-worker");
+  const existing = await navigator.serviceWorker.getRegistration().catch(() => undefined);
+  if (existing?.active) return existing;
+  if (!existing) await navigator.serviceWorker.register("/sw.js");
+  // pushManager.subscribe needs an *active* worker: wait for activation.
+  const ready = await Promise.race([navigator.serviceWorker.ready, new Promise<null>((r) => setTimeout(() => r(null), 10_000))]);
+  if (!ready?.active) throw new Error("service-worker");
   return ready;
 }
 
 export async function currentSubscription(): Promise<PushSubscription | null> {
   if (pushSupport() !== "supported") return null;
-  const reg = await swRegistration(1500);
+  // No registration means no subscription: don't wait for a worker that may never register (dev builds).
+  const reg = await navigator.serviceWorker.getRegistration().catch(() => undefined);
   return (await reg?.pushManager.getSubscription()) ?? null;
 }
 
 export class PushError extends Error {
-  constructor(readonly code: "denied" | "disabled" | "unsupported" | "service-worker") {
+  constructor(readonly code: "denied" | "disabled" | "unsupported" | "service-worker" | "subscribe") {
     super(code);
   }
 }
@@ -58,7 +59,14 @@ export async function enablePush(): Promise<PushSubscription> {
     throw new PushError("service-worker");
   }
   let sub = await reg.pushManager.getSubscription();
-  if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(key) as BufferSource });
+  if (!sub) {
+    try {
+      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(key) as BufferSource });
+    } catch {
+      // The browser's push service refused or is unreachable (e.g. headless browsers, blocked networks).
+      throw new PushError(Notification.permission === "denied" ? "denied" : "subscribe");
+    }
+  }
   const json = sub.toJSON() as PushSubscriptionBody;
   await pushApi.subscribe({ endpoint: json.endpoint, keys: json.keys, expirationTime: json.expirationTime ?? null, user_agent: navigator.userAgent });
   return sub;

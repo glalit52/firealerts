@@ -1211,6 +1211,7 @@ const dict = {
   "public.disclaimer": "Satellite detections can include false alarms and miss small or obscured fires. Always follow official guidance from your local fire authority.",
   "public.inView": "In view · {n} h",
   "public.global": "Worldwide · 24 h",
+  "push.err.subscribe": "This browser couldn't create a push subscription (its push service may be unavailable). Try another browser or install the app.",
 };
 
 export type Messages = { [K in keyof typeof dict]: (typeof dict)[K] extends string ? string : Plural };

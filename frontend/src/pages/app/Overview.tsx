@@ -35,7 +35,7 @@ function firesNear(assets: AssetListItem[], dets: DetectionCollection | undefine
 }
 
 export default function Overview() {
-  const { t } = useT();
+  const { t, locale } = useT();
   useDocumentTitle(t("nav.overview"));
   const { me, can } = useAuth();
   const toast = useToast();
@@ -82,8 +82,9 @@ export default function Overview() {
 
   const groups = useMemo(() => {
     const s = status.data?.by_source_24h ?? {};
-    return SENSOR_GROUPS.map((g) => ({ ...g, count: Object.entries(s).filter(([k]) => g.match(k)).reduce((a, [, v]) => a + v, 0) }));
-  }, [status.data]);
+    return SENSOR_GROUPS.map((g) => ({ id: g.id, label: g.label, count: Object.entries(s).filter(([k]) => g.match(k)).reduce((a, [, v]) => a + v, 0) }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status.data, locale]);
   const lastRun = status.data?.runs[0];
   const noAssets = assets.data && assets.data.length === 0;
   const greeting = me?.user?.name ? t("overview.welcome", { name: me.user.name.split(" ")[0] }) : t("nav.overview");

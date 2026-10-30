@@ -17,7 +17,7 @@ export function viewBBox(map: MlMap): BBox {
 }
 
 function ensureWindLayer(map: MlMap) {
-  if (!map.hasImage(WIND_IMAGE)) map.addImage(WIND_IMAGE, arrowSDF(48, 6), { sdf: true, pixelRatio: 2 });
+  if (!map.hasImage(WIND_IMAGE)) map.addImage(WIND_IMAGE, arrowSDF(64, 8), { sdf: true, pixelRatio: 2 });
   if (!map.getSource(WIND_SOURCE)) map.addSource(WIND_SOURCE, { type: "geojson", data: { type: "FeatureCollection", features: [] } });
   if (!map.getLayer(WIND_LAYER)) {
     const step: unknown[] = ["step", ["get", "speed"], WIND_BANDS[0]!.color];
@@ -32,7 +32,7 @@ function ensureWindLayer(map: MlMap) {
         "icon-rotation-alignment": "map",
         "icon-allow-overlap": true,
         "icon-ignore-placement": true,
-        "icon-size": ["interpolate", ["linear"], ["get", "speed"], 0, 0.55, 20, 0.8, 60, 1.25],
+        "icon-size": ["interpolate", ["linear"], ["get", "speed"], 0, 0.75, 20, 1, 60, 1.5],
       },
       paint: {
         "icon-color": step as never,

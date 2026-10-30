@@ -87,7 +87,16 @@ export function MapView({ center = [-30, 5], zoom = 1.6, hash, onReady, children
         window.history.replaceState(window.history.state, "", `${window.location.pathname}${window.location.search}#${c.lat.toFixed(4)},${c.lng.toFixed(4)},${map.getZoom().toFixed(1)}`);
       });
     }
-    map.on("load", () => onReadyRef.current?.(map));
+    // Ready as soon as the style is parsed (sources/layers/images can be added); "load" also waits for
+    // basemap tiles, which can take long or never finish when a tile server is slow or blocked.
+    let ready = false;
+    const fireReady = () => {
+      if (ready) return;
+      ready = true;
+      onReadyRef.current?.(map);
+    };
+    map.once("style.load", fireReady);
+    map.once("load", fireReady);
     // Tiles that fail offline are not fatal; keep the console quiet.
     map.on("error", () => undefined);
     // MapLibre only listens to window resizes; containers also change size with layout,

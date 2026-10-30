@@ -28,6 +28,7 @@ const ERRORS: Record<PushError["code"], MsgKey> = {
   disabled: "push.err.disabled",
   unsupported: "push.err.unsupported",
   "service-worker": "push.err.sw",
+  subscribe: "push.err.subscribe",
 };
 
 export default function Notifications() {

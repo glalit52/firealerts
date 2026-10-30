@@ -89,7 +89,7 @@
 .map-stats { position: absolute; left: 12px; bottom: 30px; z-index: 3; display: flex; gap: 18px; padding: 8px 14px; }
 .map-stats .stat b { display: block; font-size: 15px; font-variant-numeric: tabular-nums; line-height: 1.2; }
 .map-stats .stat span { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
-.map-legend { position: absolute; right: 12px; bottom: 100px; z-index: 3; padding: 8px 10px; font-size: 11px; color: var(--muted); display: grid; gap: 4px; }
+.map-legend { position: absolute; right: 12px; bottom: 122px; z-index: 3; padding: 8px 10px; font-size: 11px; color: var(--muted); display: grid; gap: 4px; }
 .map-legend b { color: var(--text); font-weight: 600; }
 .map-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
 .inc { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 9px 10px; border-radius: var(--radius); border: 1px solid transparent; cursor: pointer; margin-bottom: 3px; width: 100%; background: none; color: inherit; text-align: left; font: inherit; }

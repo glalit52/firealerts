@@ -104,7 +104,7 @@ export default function AssetDetail() {
   const { id: idParam } = useParams();
   const id = Number(idParam);
   const toast = useToast();
-  const { t } = useT();
+  const { t, locale } = useT();
   const asset = useAsync(() => assetsApi.get(id), [id]);
   const summary = useAsync(() => assetsApi.summary(id), [id]);
   const [days, setDays] = useState(7);
@@ -217,7 +217,7 @@ export default function AssetDetail() {
             {!a.active && <Badge kind="warn">{t("assets.paused")}</Badge>}
             {today && (
               <span className="danger-pill" style={{ background: dangerInfo(today.danger).color, color: today.danger === "extreme" ? "#fff" : "#14161c" }}>
-                {t("asset.dangerToday", { danger: dangerInfo(today.danger).label })}
+                {t("asset.dangerToday", { danger: locale === "en" ? dangerInfo(today.danger).label : dangerInfo(today.danger).label.toLowerCase() })}
               </span>
             )}
           </div>
